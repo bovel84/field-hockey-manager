@@ -5,3 +5,7 @@ data/fhm.db
 data/fhm.db-journal
 .DS_Store
 .specify/memory/
+.buildozer/
+bin/
+*.apk
+*.aab
