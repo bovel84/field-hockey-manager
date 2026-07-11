@@ -27,7 +27,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
-          pip install buildozer cython==0.29.36 kivy==2.3.1 Pillow pytest
+          pip install buildozer cython==0.29.36 kivy==2.3.1 Pillow pytest rich
 
       - name: Run tests
         run: python -m pytest tests/ -q
