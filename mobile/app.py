@@ -4,10 +4,13 @@ import json
 import os
 import sys
 import random
+import traceback
 
 from kivy.app import App
 from kivy.uix.screenmanager import ScreenManager, SlideTransition
 from kivy.core.window import Window
+from kivy.resources import resource_find
+from kivy.uix.label import Label
 
 _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _root not in sys.path:
@@ -61,7 +64,26 @@ class FieldHockeyManagerApp(App):
         self.career_news: list[str] = ["Benvenuto nella tua nuova carriera da manager."]
 
     def build(self):
-        self._init_game()
+        try:
+            self._init_game()
+        except Exception:
+            error_text = traceback.format_exc()
+            try:
+                os.makedirs(self.user_data_dir, exist_ok=True)
+                with open(os.path.join(self.user_data_dir, "startup_error.txt"), "w",
+                          encoding="utf-8") as error_file:
+                    error_file.write(error_text)
+            except Exception:
+                pass
+            return Label(
+                text="[b]Errore di avvio[/b]\n\n" + error_text[-1800:],
+                markup=True,
+                color=(1, 0.35, 0.35, 1),
+                halign="left",
+                valign="top",
+                text_size=(Window.width - 30, None),
+            )
+
         self.sm = ScreenManager(transition=SlideTransition(direction="left"))
 
         self.sm.add_widget(MenuScreen(self, name="menu"))
@@ -82,7 +104,15 @@ class FieldHockeyManagerApp(App):
         # mutable SQLite database in Kivy's private, writable app directory.
         os.makedirs(self.user_data_dir, exist_ok=True)
         db_path = os.path.join(self.user_data_dir, "fhm.db")
-        teams_path = os.path.join(project_root, "data", "teams.json")
+        teams_path = (
+            resource_find("data/teams.json")
+            or resource_find("teams.json")
+            or os.path.join(project_root, "data", "teams.json")
+        )
+        if not teams_path or not os.path.exists(teams_path):
+            raise FileNotFoundError(
+                "Risorsa data/teams.json non inclusa nell'APK"
+            )
 
         self.db = Database(db_path)
         self.db.init()
