@@ -8,7 +8,7 @@ source.dir = .
 source.include_exts = py,json,kv,txt,png,atlas
 source.include_patterns = main.py,data/*.json,mobile/*.py,mobile/__init__.py,src/*.py,src/__init__.py
 
-version = 1.2.0
+version = 1.2.1
 
 requirements = python3,kivy,pyjnius,sqlite3
 
