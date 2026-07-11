@@ -10,6 +10,8 @@ from kivy.uix.screenmanager import ScreenManager, SlideTransition
 from kivy.core.window import Window
 from kivy.resources import resource_find
 from kivy.uix.label import Label
+from kivy.uix.boxlayout import BoxLayout
+from kivy.clock import Clock
 
 _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _root not in sys.path:
@@ -63,39 +65,60 @@ class FieldHockeyManagerApp(App):
         self.career_news: list[str] = ["Benvenuto nella tua nuova carriera da manager."]
 
     def build(self):
+        """Show a real Kivy window immediately, then initialize the career."""
+        self.root_container = BoxLayout(orientation="vertical", padding=24)
+        self.loading_label = Label(
+            text="[b]Field Hockey Manager[/b]\n\nAvvio carriera in corso...",
+            markup=True,
+            color=(1, 1, 1, 1),
+            halign="center",
+            valign="middle",
+        )
+        self.loading_label.bind(
+            size=lambda inst, _value=None: setattr(inst, "text_size", inst.size)
+        )
+        self.root_container.add_widget(self.loading_label)
+        Clock.schedule_once(self._finish_startup, 0.25)
+        return self.root_container
+
+    def _finish_startup(self, _dt):
         try:
             self._init_game()
+            self.sm = ScreenManager(transition=SlideTransition(direction="left"))
+            self.sm.add_widget(MenuScreen(self, name="menu"))
+            self.sm.add_widget(RosaScreen(self, name="rosa"))
+            self.sm.add_widget(CalendarioScreen(self, name="calendario"))
+            self.sm.add_widget(ClassificaScreen(self, name="classifica"))
+            self.sm.add_widget(PartitaScreen(self, name="partita"))
+            self.sm.add_widget(StatisticheScreen(self, name="statistiche"))
+            self.sm.add_widget(AllenamentiScreen(self, name="allenamenti"))
+            self.sm.add_widget(MercatoScreen(self, name="mercato"))
+            self.sm.add_widget(CarrieraScreen(self, name="carriera"))
+            self.root_container.clear_widgets()
+            self.root_container.add_widget(self.sm)
         except Exception:
             error_text = traceback.format_exc()
             try:
                 os.makedirs(self.user_data_dir, exist_ok=True)
-                with open(os.path.join(self.user_data_dir, "startup_error.txt"), "w",
-                          encoding="utf-8") as error_file:
+                with open(
+                    os.path.join(self.user_data_dir, "startup_error.txt"),
+                    "w", encoding="utf-8"
+                ) as error_file:
                     error_file.write(error_text)
             except Exception:
                 pass
-            return Label(
-                text="[b]Errore di avvio[/b]\n\n" + error_text[-1800:],
+            self.root_container.clear_widgets()
+            error_label = Label(
+                text="[b]Errore di avvio[/b]\n\n" + error_text[-2400:],
                 markup=True,
                 color=(1, 0.35, 0.35, 1),
                 halign="left",
                 valign="top",
-                text_size=(Window.width - 30, None),
             )
-
-        self.sm = ScreenManager(transition=SlideTransition(direction="left"))
-
-        self.sm.add_widget(MenuScreen(self, name="menu"))
-        self.sm.add_widget(RosaScreen(self, name="rosa"))
-        self.sm.add_widget(CalendarioScreen(self, name="calendario"))
-        self.sm.add_widget(ClassificaScreen(self, name="classifica"))
-        self.sm.add_widget(PartitaScreen(self, name="partita"))
-        self.sm.add_widget(StatisticheScreen(self, name="statistiche"))
-        self.sm.add_widget(AllenamentiScreen(self, name="allenamenti"))
-        self.sm.add_widget(MercatoScreen(self, name="mercato"))
-        self.sm.add_widget(CarrieraScreen(self, name="carriera"))
-
-        return self.sm
+            error_label.bind(
+                size=lambda inst, _value=None: setattr(inst, "text_size", inst.size)
+            )
+            self.root_container.add_widget(error_label)
 
     def _init_game(self):
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
