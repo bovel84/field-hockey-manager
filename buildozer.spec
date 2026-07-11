@@ -6,8 +6,9 @@ package.domain = org.fhm
 
 source.dir = .
 source.include_exts = py,json,kv,txt,png,atlas
+source.include_patterns = data/*.json,mobile/*.py,src/*.py
 
-version = 1.1.0
+version = 1.1.1
 
 requirements = python3,kivy,pyjnius,sqlite3
 
