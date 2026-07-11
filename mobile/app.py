@@ -69,7 +69,10 @@ class FieldHockeyManagerApp(App):
 
     def _init_game(self):
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        db_path = os.path.join(project_root, "data", "fhm.db")
+        # Packaged application files are read-only on Android. Store the
+        # mutable SQLite database in Kivy's private, writable app directory.
+        os.makedirs(self.user_data_dir, exist_ok=True)
+        db_path = os.path.join(self.user_data_dir, "fhm.db")
         teams_path = os.path.join(project_root, "data", "teams.json")
 
         self.db = Database(db_path)
