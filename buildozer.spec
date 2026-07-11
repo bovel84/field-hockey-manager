@@ -23,8 +23,12 @@ android.permissions =
 
 log_level = 2
 
-source.exclude_dirs = tests, .venv, __pycache__, .git, .specify, .vscode, .github, .pytest_cache
+source.exclude_dirs = tests, .venv, __pycache__, .git, .specify, .vscode, .github, .pytest_cache, mobile
 
 [build]
 builder = python3
 compiler = cython
+
+# Buildozer CI settings
+android.accept_sdk_license = True
+android.debug_artifacts = True
