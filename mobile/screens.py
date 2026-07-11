@@ -84,6 +84,7 @@ class MenuScreen(Screen):
             color=(0.6, 0.7, 0.9, 1), size_hint_y=None, height=30,
         ))
 
+        layout.add_widget(styled_button("💼 Centro Carriera", lambda _: setattr(app.sm, 'current', 'carriera')))
         layout.add_widget(styled_button("🥅 Rosa", lambda _: setattr(app.sm, 'current', 'rosa')))
         layout.add_widget(styled_button("📅 Calendario", lambda _: setattr(app.sm, 'current', 'calendario')))
         layout.add_widget(styled_button("🏆 Classifica", lambda _: setattr(app.sm, 'current', 'classifica')))
@@ -434,3 +435,60 @@ class MercatoScreen(Screen):
         ok = self.app.buy_player(player)
         if ok:
             self._refresh()
+
+# ── Centro Carriera ─────────────────────────────────────────────
+
+class CarrieraScreen(Screen):
+    """Manager career dashboard with board, supporters and season progression."""
+
+    def __init__(self, app, **kwargs):
+        super().__init__(**kwargs)
+        self.app = app
+        make_screen_bg(self)
+        self.layout = BoxLayout(orientation="vertical", padding=16, spacing=8)
+        self.layout.add_widget(section_title("💼 Centro Carriera"))
+        self.summary = Label(text="", font_size="16sp", color=TEXT_COLOR,
+                             size_hint_y=None, height=150, halign="left", valign="middle")
+        self.summary.bind(size=lambda inst, _value=None: setattr(inst, "text_size", inst.size))
+        self.layout.add_widget(self.summary)
+        self.layout.add_widget(section_title("📰 Notizie e spogliatoio"))
+        self.news = Label(text="", font_size="14sp", color=(0.75, 0.82, 0.95, 1),
+                          halign="left", valign="top")
+        self.news.bind(size=lambda inst, _value=None: setattr(inst, "text_size", inst.size))
+        self.layout.add_widget(self.news)
+        self.new_season_btn = styled_button(
+            "🏆 Avvia nuova stagione", self._new_season,
+            bg_color=(0.20, 0.55, 0.32, 1))
+        self.layout.add_widget(self.new_season_btn)
+        self.feedback = Label(text="", font_size="13sp", color=(0.95, 0.83, 0.2, 1),
+                              size_hint_y=None, height=32)
+        self.layout.add_widget(self.feedback)
+        self.layout.add_widget(styled_button(
+            "⬅️ Indietro", lambda _: setattr(app.sm, 'current', 'menu')))
+        self.add_widget(self.layout)
+
+    def on_enter(self):
+        team = self.app.user_team
+        budget = team.budget if team else 0
+        position = str(self.app.get_standings().index(team) + 1) if team else "—"
+        self.summary.text = (
+            f"Stagione: {self.app.season_number}\n"
+            f"Club: {team.name if team else '—'} | Posizione: {position}ª\n"
+            f"Obiettivo: {self.app.season_objective}\n"
+            f"Fiducia dirigenza: {self.app.board_confidence}/100\n"
+            f"Reputazione manager: {self.app.manager_reputation}/100\n"
+            f"Tifosi: {self.app.supporters} | Budget: {budget} crediti"
+        )
+        self.news.text = "\n".join(f"• {item}" for item in self.app.career_news)
+        self.new_season_btn.disabled = self.app.get_next_match() is not None
+        self.feedback.text = ("Completa il campionato per avanzare."
+                              if self.new_season_btn.disabled
+                              else "La stagione è conclusa: prepara il nuovo anno.")
+
+    def _new_season(self, _):
+        if self.app.start_new_season():
+            self.feedback.text = "Nuova stagione avviata!"
+            self.on_enter()
+        else:
+            self.feedback.text = "Devi prima completare tutte le partite."
+
