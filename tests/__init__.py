@@ -1,0 +1,1 @@
+# Field Hockey Manager - tests package
