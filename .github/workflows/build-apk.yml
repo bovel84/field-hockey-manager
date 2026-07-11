@@ -20,19 +20,20 @@ jobs:
   build:
     needs: test
     runs-on: ubuntu-22.04
+    container:
+      image: ghcr.io/kivy/buildozer:latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build with Buildozer
-        uses: ArtemSBulgakov/buildozer-action@v1
-        id: buildozer
-        with:
-          workdir: .
-          buildozer_version: stable
+      - name: Install buildozer
+        run: pip install buildozer
+
+      - name: Build APK
+        run: buildozer android debug
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: field-hockey-manager-apk
-          path: ${{ steps.buildozer.outputs.filename }}
+          path: bin/*.apk
           retention-days: 30
