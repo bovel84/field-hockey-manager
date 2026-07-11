@@ -11,13 +11,13 @@ package.domain = org.fhm
 
 # Source code
 source.dir = .
-source.include_exts = py,json,db,kv,txt,png
+source.include_exts = py,json,db,kv,txt,png,atlas
 
 # Version
 version = 1.0.0
 
 # Requirements
-requirements = kivy,sqlite3,pygame,Pillow
+requirements = kivy,sqlite3,Pillow,pyjnius,android
 
 # Orientation
 orientation = portrait
