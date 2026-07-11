@@ -123,7 +123,7 @@ class PlayerCard(BoxLayout):
             halign="left",
             valign="middle",
         )
-        name_lbl.bind(size=lambda inst: inst.set_texture_size())
+        name_lbl.bind(size=lambda inst, _value=None: setattr(inst, "text_size", inst.size))
         pos_lbl = Label(
             text=f"{POS_EMOJI.get(player.position, '')} {player.position.value}",
             font_size="14sp",
@@ -131,7 +131,7 @@ class PlayerCard(BoxLayout):
             size_hint_x=0.35,
             halign="right",
         )
-        pos_lbl.bind(size=lambda inst: inst.set_texture_size())
+        pos_lbl.bind(size=lambda inst, _value=None: setattr(inst, "text_size", inst.size))
         top.add_widget(name_lbl)
         top.add_widget(pos_lbl)
 
@@ -192,7 +192,7 @@ class PlayerCard(BoxLayout):
         self.add_widget(bot)
 
     def _update_rect(self, *_):
-        self.canvas_before.clear()
+        self.canvas.before.clear()
         with self.canvas.before:
             Color(*CARD_COLOR)
             RoundedRectangle(pos=self.pos, size=self.size, radius=[8])
@@ -239,7 +239,7 @@ class MatchResult(BoxLayout):
             size_hint_x=0.35,
             halign="right",
         )
-        home_lbl.bind(size=lambda inst: inst.set_texture_size())
+        home_lbl.bind(size=lambda inst, _value=None: setattr(inst, "text_size", inst.size))
 
         if played:
             score_text = f"{home_score} - {away_score}"
@@ -270,14 +270,14 @@ class MatchResult(BoxLayout):
             size_hint_x=0.35,
             halign="left",
         )
-        away_lbl.bind(size=lambda inst: inst.set_texture_size())
+        away_lbl.bind(size=lambda inst, _value=None: setattr(inst, "text_size", inst.size))
 
         self.add_widget(home_lbl)
         self.add_widget(score_lbl)
         self.add_widget(away_lbl)
 
     def _update_rect(self, *_):
-        self.canvas_before.clear()
+        self.canvas.before.clear()
         with self.canvas.before:
             bg = CARD_COLOR
             Color(*bg)
