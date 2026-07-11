@@ -19,12 +19,14 @@ from src.season import (
     generate_calendar, Standings, train_player,
     generate_free_agents, player_price,
     MAX_TRAININGS_PER_WEEK, TRAINING_ATTRIBUTES,
+    age_player_one_year, season_aging,
 )
 from src.simulation import simulate_match
 
 from mobile.screens import (
     MenuScreen, RosaScreen, CalendarioScreen, ClassificaScreen,
     PartitaScreen, StatisticheScreen, AllenamentiScreen, MercatoScreen,
+    CarrieraScreen,
 )
 
 Window.clearcolor = (0.102, 0.102, 0.180, 1)  # #1a1a2e
@@ -51,6 +53,12 @@ class FieldHockeyManagerApp(App):
         self.trainings_used: int = 0
         self.free_agents: list[Player] = []
         self.sm: ScreenManager | None = None
+        self.season_number: int = 1
+        self.manager_reputation: int = 50
+        self.board_confidence: int = 65
+        self.supporters: int = 1200
+        self.season_objective: str = "Qualificazione playoff"
+        self.career_news: list[str] = ["Benvenuto nella tua nuova carriera da manager."]
 
     def build(self):
         self._init_game()
@@ -64,6 +72,7 @@ class FieldHockeyManagerApp(App):
         self.sm.add_widget(StatisticheScreen(self, name="statistiche"))
         self.sm.add_widget(AllenamentiScreen(self, name="allenamenti"))
         self.sm.add_widget(MercatoScreen(self, name="mercato"))
+        self.sm.add_widget(CarrieraScreen(self, name="carriera"))
 
         return self.sm
 
@@ -97,12 +106,26 @@ class FieldHockeyManagerApp(App):
             team = Team(name=t_data["name"], players=players)
             self.teams.append(team)
 
+        saved_teams = self.db.load_all_teams()
+        state = self.db.load_state() or {}
+        if saved_teams and len(saved_teams) == len(self.teams):
+            by_name = {team.name: team for team in saved_teams}
+            self.teams = [by_name.get(team.name, team) for team in self.teams]
+
         self.user_team_idx = 0
         self.user_team = self.teams[0] if self.teams else None
         self.calendar = generate_calendar(self.teams, self.user_team_idx)
-        self.current_round = 0
-        self.trainings_used = 0
-        self.free_agents = generate_free_agents(5)
+        self.current_round = int(state.get("current_round", 0))
+        self.trainings_used = int(state.get("trainings_used", 0))
+        self.season_number = int(state.get("season_number", 1))
+        self.manager_reputation = int(state.get("manager_reputation", 50))
+        self.board_confidence = int(state.get("board_confidence", 65))
+        self.supporters = int(state.get("supporters", 1200))
+        self.season_objective = state.get("season_objective", "Qualificazione playoff")
+        self.career_news = state.get(
+            "career_news", ["Benvenuto nella tua nuova carriera da manager."]
+        )
+        self.free_agents = generate_free_agents(8)
 
     def get_next_match(self) -> dict | None:
         for entry in self.calendar:
@@ -139,6 +162,7 @@ class FieldHockeyManagerApp(App):
                                     away_formation=formation, away_intensity=intensity)
 
         self._apply_result(match, entry)
+        self._update_career_after_match(match, entry)
         self.current_round = entry["round"] + 1
         self.trainings_used = 0  # reset trainings for new round
         return match
@@ -179,12 +203,63 @@ class FieldHockeyManagerApp(App):
 
         for ev in match.events:
             if ev.get("type") == "goal":
-                scorer_name = ev.get("player", "")
-                team_players = home.players if ev.get("team") == home.name else away.players
+                scorer_name = ev.get("scorer") or ev.get("player", "")
+                team_players = home.players if ev.get("team") in ("home", home.name) else away.players
                 for p in team_players:
                     if p.name == scorer_name:
                         p.goals += 1
                         break
+
+    def _update_career_after_match(self, match: Match, entry: dict):
+        """Update reputation, board confidence, supporters and news."""
+        is_home = entry["home"] == self.user_team_idx
+        user_score = match.home_score if is_home else match.away_score
+        opponent_score = match.away_score if is_home else match.home_score
+        opponent = match.away_team if is_home else match.home_team
+        if user_score > opponent_score:
+            self.manager_reputation = min(100, self.manager_reputation + 2)
+            self.board_confidence = min(100, self.board_confidence + 4)
+            self.supporters += 80
+            headline = f"Vittoria contro {opponent.name}: la dirigenza è soddisfatta."
+        elif user_score == opponent_score:
+            self.board_confidence = min(100, self.board_confidence + 1)
+            self.supporters += 15
+            headline = f"Pareggio contro {opponent.name}: prestazione solida."
+        else:
+            self.manager_reputation = max(0, self.manager_reputation - 1)
+            self.board_confidence = max(0, self.board_confidence - 4)
+            self.supporters = max(100, self.supporters - 35)
+            headline = f"Sconfitta contro {opponent.name}: aumenta la pressione."
+        self.career_news.insert(0, headline)
+        self.career_news = self.career_news[:6]
+
+    def start_new_season(self) -> bool:
+        """Advance the career after the current championship is complete."""
+        if self.get_next_match() is not None:
+            return False
+        prize = max(100, 700 - self.get_standings().index(self.user_team) * 80)
+        for team in self.teams:
+            team.points = team.goals_for = team.goals_against = 0
+            team.wins = team.draws = team.losses = 0
+            for player in team.players:
+                season_aging(player)
+                age_player_one_year(player)
+                player.appearances = 0
+                player.goals = 0
+        if self.user_team:
+            self.user_team.budget += prize
+        self.season_number += 1
+        self.current_round = 0
+        self.trainings_used = 0
+        self.calendar = generate_calendar(self.teams, self.user_team_idx)
+        self.free_agents = generate_free_agents(8)
+        self.season_objective = (
+            "Vincere il campionato" if self.manager_reputation >= 75
+            else "Qualificazione playoff"
+        )
+        self.career_news.insert(0, f"Stagione {self.season_number}: budget premio +{prize}.")
+        self.save_game()
+        return True
 
     def get_standings(self) -> list[Team]:
         return sorted(self.teams, key=lambda t: (t.points, t.goals_for - t.goals_against), reverse=True)
@@ -222,3 +297,13 @@ class FieldHockeyManagerApp(App):
             return
         for team in self.teams:
             self.db.save_team(team)
+        self.db.save_state({
+            "current_round": self.current_round,
+            "trainings_used": self.trainings_used,
+            "season_number": self.season_number,
+            "manager_reputation": self.manager_reputation,
+            "board_confidence": self.board_confidence,
+            "supporters": self.supporters,
+            "season_objective": self.season_objective,
+            "career_news": self.career_news,
+        })
