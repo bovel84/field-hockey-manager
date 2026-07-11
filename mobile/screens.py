@@ -240,7 +240,7 @@ class PartitaScreen(Screen):
             text="", font_size="13sp", color=(0.7, 0.8, 0.9, 1),
             size_hint_y=None, height=120, valign="top", halign="left",
         )
-        self.events_label.bind(size=lambda inst: inst.set_texture_size())
+        self.events_label.bind(size=lambda inst, _value=None: setattr(inst, "text_size", inst.size))
         self.layout.add_widget(self.events_label)
 
         self.layout.add_widget(styled_button("⬅️ Indietro", lambda _: setattr(app.sm, 'current', 'menu')))
