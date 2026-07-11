@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import sys
-import random
 import traceback
 
 from kivy.app import App
@@ -19,7 +18,7 @@ if _root not in sys.path:
 from src.models import Player, Team, Match, Position
 from src.database import Database
 from src.season import (
-    generate_calendar, Standings, train_player,
+    generate_calendar, train_player,
     generate_free_agents, player_price,
     MAX_TRAININGS_PER_WEEK, TRAINING_ATTRIBUTES,
     age_player_one_year, season_aging,
@@ -133,7 +132,7 @@ class FieldHockeyManagerApp(App):
                     speed=p_data["speed"],
                     stamina=p_data["stamina"],
                 ))
-            team = Team(name=t_data["name"], players=players)
+            team = Team(name=t_data["name"], players=players, budget=t_data.get("budget", 500))
             self.teams.append(team)
 
         saved_teams = self.db.load_all_teams()
@@ -195,6 +194,7 @@ class FieldHockeyManagerApp(App):
         self._update_career_after_match(match, entry)
         self.current_round = entry["round"] + 1
         self.trainings_used = 0  # reset trainings for new round
+        self.save_game()
         return match
 
     def _apply_result(self, match: Match, entry: dict):
@@ -209,17 +209,17 @@ class FieldHockeyManagerApp(App):
             home.points += 3
             home.wins += 1
             away.losses += 1
-            for p in home.players:
+            for p in home.get_starters():
                 p.apply_morale(10)
-            for p in away.players:
+            for p in away.get_starters():
                 p.apply_morale(-10)
         elif match.home_score < match.away_score:
             away.points += 3
             away.wins += 1
             home.losses += 1
-            for p in away.players:
+            for p in away.get_starters():
                 p.apply_morale(10)
-            for p in home.players:
+            for p in home.get_starters():
                 p.apply_morale(-10)
         else:
             home.points += 1
@@ -227,7 +227,7 @@ class FieldHockeyManagerApp(App):
             home.draws += 1
             away.draws += 1
 
-        for p in home.players + away.players:
+        for p in home.get_starters() + away.get_starters():
             p.appearances += 1
             p.heal_one_match()
 
