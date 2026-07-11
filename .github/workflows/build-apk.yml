@@ -41,21 +41,15 @@ jobs:
             autoconf automake libtool pkg-config \
             zlib1g-dev libffi-dev libssl-dev \
             libbz2-dev libsqlite3-dev libltdl-dev \
-            cython cython3
-          sudo apt-get install -y \
-            ccache git zip unzip openjdk-17-jdk
+            ccache git zip unzip
 
-      - name: Install buildozer and dependencies
+      - name: Install buildozer
         run: |
           pip install --upgrade pip
           pip install buildozer==1.5.0 cython==0.29.36 virtualenv
-          pip install kivy==2.3.1 pyjnius android sqlite3 Pillow
 
       - name: Build APK
         run: buildozer -v android debug
-        env:
-          ANDROID_HOME: /usr/lib/android-sdk
-          BUILDOZER_WARN_ON_WRONG_ARGUMENT: 1
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

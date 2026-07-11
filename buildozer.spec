@@ -5,11 +5,11 @@ package.name = fieldhockeymanager
 package.domain = org.fhm
 
 source.dir = .
-source.include_exts = py,json,db,kv,txt,png,atlas
+source.include_exts = py,json,kv,txt,png,atlas
 
 version = 1.0.0
 
-requirements = kivy,pyjnius,android,sqlite3,Pillow
+requirements = python3,kivy,pyjnius,sqlite3
 
 orientation = portrait
 
@@ -23,12 +23,8 @@ android.permissions =
 
 log_level = 2
 
-source.exclude_dirs = tests, .venv, __pycache__, .git, .specify, .vscode, .github, .pytest_cache, mobile
+source.exclude_dirs = tests, .venv, __pycache__, .git, .specify, .vscode, .github, .pytest_cache
 
 [build]
 builder = python3
 compiler = cython
-
-# Buildozer CI settings
-android.accept_sdk_license = True
-android.debug_artifacts = True
