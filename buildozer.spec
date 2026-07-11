@@ -8,7 +8,7 @@ source.dir = .
 source.include_exts = py,json,kv,txt,png,atlas
 source.include_patterns = data/*.json,mobile/*.py,src/*.py
 
-version = 1.1.1
+version = 1.1.2
 
 requirements = python3,kivy,pyjnius,sqlite3
 
@@ -16,7 +16,7 @@ orientation = portrait
 
 android.api = 34
 android.minapi = 21
-android.archs = arm64-v8a, armeabi-v7a
+android.archs = arm64-v8a
 android.skip_update = False
 android.accept_sdk_license = True
 android.build_tools_version = 34.0.0
