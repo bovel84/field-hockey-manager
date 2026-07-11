@@ -48,6 +48,14 @@ jobs:
           pip install --upgrade pip
           pip install buildozer==1.5.0 cython==0.29.36 virtualenv
 
+      - name: Prepare Android SDK licenses
+        run: |
+          mkdir -p "$HOME/.buildozer/android/platform/android-sdk/licenses"
+          if [ -d "$ANDROID_SDK_ROOT/licenses" ]; then
+            cp -R "$ANDROID_SDK_ROOT/licenses/." \
+              "$HOME/.buildozer/android/platform/android-sdk/licenses/"
+          fi
+
       - name: Build APK
         run: buildozer -v android debug
 
