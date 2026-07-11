@@ -270,7 +270,7 @@ class PartitaScreen(Screen):
         self.result_label.text = f"{match.home_team.name} {match.home_score} - {match.away_score} {match.away_team.name}"
         self.result_label.color = c
         events_text = "\n".join(
-            f"{ev.get('minute', '?')}' — {ev.get('type', '')}: {ev.get('player', '')}"
+            f"{ev.get('minute', '?')}' — {ev.get('type', '')}: {ev.get('scorer') or ev.get('player', '')}"
             for ev in match.events
         )
         self.events_label.text = events_text or "Nessun evento"
