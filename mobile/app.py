@@ -265,17 +265,48 @@ class FieldHockeyManagerApp(App):
             home.draws += 1
             away.draws += 1
 
-        for p in home.get_starters() + away.get_starters():
-            p.appearances += 1
-            p.heal_one_match()
+        home_starters = home.get_starters()
+        away_starters = away.get_starters()
+        home_scorers = {
+            ev.get("scorer") or ev.get("player", "")
+            for ev in match.events
+            if ev.get("type") in ("goal", "corner_goal", "penalty_goal")
+            and ev.get("team") in ("home", home.name)
+        }
+        away_scorers = {
+            ev.get("scorer") or ev.get("player", "")
+            for ev in match.events
+            if ev.get("type") in ("goal", "corner_goal", "penalty_goal")
+            and ev.get("team") in ("away", away.name)
+        }
+
+        home_won = match.home_score > match.away_score
+        away_won = match.away_score > match.home_score
+        drew = match.home_score == match.away_score
+
+        # Match load, recovery and form now affect future team selection/results.
+        for team, starters, won, scorers in (
+            (home, home_starters, home_won, home_scorers),
+            (away, away_starters, away_won, away_scorers),
+        ):
+            starter_ids = {id(player) for player in starters}
+            for player in team.players:
+                player.heal_one_match()
+                if id(player) in starter_ids:
+                    player.appearances += 1
+                    player.apply_match_load(team.intensity, played=True)
+                    player.update_form(won=won, drew=drew, scored=player.name in scorers)
+                else:
+                    player.apply_match_load(played=False)
+                player.recover_between_matches()
 
         for ev in match.events:
-            if ev.get("type") == "goal":
+            if ev.get("type") in ("goal", "corner_goal", "penalty_goal"):
                 scorer_name = ev.get("scorer") or ev.get("player", "")
                 team_players = home.players if ev.get("team") in ("home", home.name) else away.players
-                for p in team_players:
-                    if p.name == scorer_name:
-                        p.goals += 1
+                for player in team_players:
+                    if player.name == scorer_name:
+                        player.goals += 1
                         break
 
     def _update_career_after_match(self, match: Match, entry: dict):
