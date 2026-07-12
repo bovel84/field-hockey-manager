@@ -229,6 +229,7 @@ class Team:
     prestige: int = 0  # Prestige from cup wins and playoff results
     youth_players: list[Player] = field(default_factory=list)  # Youth academy prospects
     rivals: list[str] = field(default_factory=list)  # Feature 2: rival teams for derby detection
+    selected_starter_names: list[str] = field(default_factory=list)
 
     def initialize_squad_roles(self, force: bool = False) -> None:
         """Assign credible initial roles and wages from squad hierarchy."""
@@ -256,39 +257,99 @@ class Team:
         """Return the total wage bill charged after a league fixture."""
         return sum(max(0, player.wage) for player in self.players)
 
+    def formation_counts(self) -> dict[Position, int]:
+        """Return the positional requirements of the selected formation."""
+        counts = {
+            "4-3-3": (4, 3, 3),
+            "4-4-2": (4, 4, 2),
+            "3-5-2": (3, 5, 2),
+            "5-3-2": (5, 3, 2),
+        }.get(self.formation, (4, 3, 3))
+        return {
+            Position.GOALKEEPER: 1,
+            Position.DEFENSE: counts[0],
+            Position.MIDFIELD: counts[1],
+            Position.ATTACK: counts[2],
+        }
+
+    def set_manual_lineup(self, names: list[str]) -> tuple[bool, str]:
+        """Validate and store an eleven-player starting lineup."""
+        unique_names = list(dict.fromkeys(names))
+        if len(unique_names) != 11:
+            return False, "Seleziona esattamente 11 giocatori."
+        selected = [
+            player for player in self.players
+            if player.name in unique_names and player.can_play()
+        ]
+        if len(selected) != 11:
+            return False, "La formazione contiene giocatori indisponibili."
+        if not any(player.position == Position.GOALKEEPER for player in selected):
+            return False, "La formazione deve includere almeno un portiere."
+        self.selected_starter_names = unique_names
+        return True, "Formazione titolare salvata."
+
+    def clear_manual_lineup(self) -> None:
+        self.selected_starter_names = []
+
+    def lineup_balance_penalty(self, starters: list[Player] | None = None) -> float:
+        """Return a rating penalty when roles do not fit the chosen formation."""
+        lineup = starters if starters is not None else self.get_starters()
+        expected = self.formation_counts()
+        actual = {
+            position: sum(1 for player in lineup if player.position == position)
+            for position in Position
+        }
+        mismatch = sum(abs(actual[pos] - expected[pos]) for pos in Position) / 2
+        return min(0.18, mismatch * 0.03)
+
     def team_rating(self) -> int:
-        """Average rating of the 11 starters (using effective_rating)."""
+        """Average match-day rating, including positional balance."""
         starters = self.get_starters()
         if not starters:
             return 0
-        return int(round(sum(p.effective_rating() for p in starters) / len(starters)))
+        average = sum(player.effective_rating() for player in starters) / len(starters)
+        balance = 1.0 - self.lineup_balance_penalty(starters)
+        return int(round(average * balance))
 
     def get_starters(self) -> list[Player]:
-        """Return the best 11 available players (1 GK + 4 DEF + 5 MID + 6 ATT if available)."""
+        """Return the manual XI when valid, otherwise a formation-aware auto XI."""
+        if len(self.selected_starter_names) == 11:
+            by_name = {player.name: player for player in self.players}
+            manual = [
+                by_name[name] for name in self.selected_starter_names
+                if name in by_name and by_name[name].can_play()
+            ]
+            if len(manual) == 11 and any(
+                player.position == Position.GOALKEEPER for player in manual
+            ):
+                return manual
+
         by_pos: dict[Position, list[Player]] = {
-            Position.GOALKEEPER: [],
-            Position.DEFENSE: [],
-            Position.MIDFIELD: [],
-            Position.ATTACK: [],
+            position: [] for position in Position
         }
-        for p in self.players:
-            if p.can_play():
-                by_pos[p.position].append(p)
-        # Pick the best match-day options: form, morale and condition matter.
-        for pos in by_pos:
-            by_pos[pos].sort(key=lambda p: p.effective_rating(), reverse=True)
-        starters = (
-            by_pos[Position.GOALKEEPER][:1]
-            + by_pos[Position.DEFENSE][:4]
-            + by_pos[Position.MIDFIELD][:5]
-            + by_pos[Position.ATTACK][:6]
-        )
-        # If we don't have enough by position, fill from remaining
-        if len(starters) < 11 and len(self.players) >= 11:
-            selected_ids = {id(p) for p in starters}
-            remaining = [p for p in self.players if id(p) not in selected_ids and p.can_play()]
-            remaining.sort(key=lambda p: p.effective_rating(), reverse=True)
-            starters.extend(remaining[: 11 - len(starters)])
+        for player in self.players:
+            if player.can_play():
+                by_pos[player.position].append(player)
+        for position in by_pos:
+            by_pos[position].sort(
+                key=lambda player: player.effective_rating(), reverse=True,
+            )
+
+        requirements = self.formation_counts()
+        starters: list[Player] = []
+        for position, count in requirements.items():
+            starters.extend(by_pos[position][:count])
+
+        if len(starters) < 11:
+            selected_ids = {id(player) for player in starters}
+            remaining = [
+                player for player in self.players
+                if id(player) not in selected_ids and player.can_play()
+            ]
+            remaining.sort(
+                key=lambda player: player.effective_rating(), reverse=True,
+            )
+            starters.extend(remaining[:11 - len(starters)])
         return starters[:11]
 
     def __str__(self) -> str:
