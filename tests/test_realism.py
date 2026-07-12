@@ -86,3 +86,45 @@ def test_healing_clears_medical_diagnosis():
     assert player.injured is False
     assert player.injury_duration == 0
     assert player.injury_type == ""
+
+
+def test_initial_squad_roles_create_hierarchy_and_payroll():
+    from src.models import Team
+
+    players = [
+        make_player(name=f"Player {index}", passing=60 + index)
+        for index in range(14)
+    ]
+    team = Team(name="Contracts FC", players=players)
+    team.initialize_squad_roles()
+    roles = {player.squad_role for player in players}
+    assert "Chiave" in roles
+    assert "Titolare" in roles
+    assert "Rotazione" in roles
+    assert team.payroll_per_round() == sum(player.wage for player in players)
+
+
+def test_key_player_loses_happiness_when_benched():
+    player = make_player(squad_role="Chiave", happiness=60)
+    player.update_happiness_for_selection(started=False)
+    assert player.happiness == 55
+
+
+def test_rotation_player_gains_happiness_when_selected():
+    player = make_player(squad_role="Rotazione", happiness=60)
+    player.update_happiness_for_selection(started=True)
+    assert player.happiness == 63
+
+
+def test_contract_renewal_rejects_unrealistic_wage():
+    player = make_player(squad_role="Chiave", happiness=60)
+    assert player.renew_contract(years=3, wage=1) is False
+    assert player.happiness == 55
+
+
+def test_contract_renewal_accepts_credible_offer():
+    player = make_player(squad_role="Titolare", happiness=60)
+    assert player.renew_contract(years=4, wage=8) is True
+    assert player.contract_years == 4
+    assert player.wage == 8
+    assert player.happiness == 65
