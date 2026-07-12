@@ -216,6 +216,32 @@ class Team:
     youth_players: list[Player] = field(default_factory=list)  # Youth academy prospects
     rivals: list[str] = field(default_factory=list)  # Feature 2: rival teams for derby detection
 
+    def initialize_squad_roles(self, force: bool = False) -> None:
+        """Assign credible initial roles and wages from squad hierarchy."""
+        if not force and any(
+            player.squad_role != "Rotazione" or player.wage != 2
+            for player in self.players
+        ):
+            return
+        ranked = sorted(self.players, key=lambda player: player.overall_rating(), reverse=True)
+        for index, player in enumerate(ranked):
+            if player.age <= 21 and index >= 7:
+                player.squad_role = "Prospetto"
+                player.wage = max(1, player.overall_rating() // 35)
+            elif index < 3:
+                player.squad_role = "Chiave"
+                player.wage = max(4, player.overall_rating() // 20)
+            elif index < 11:
+                player.squad_role = "Titolare"
+                player.wage = max(3, player.overall_rating() // 24)
+            else:
+                player.squad_role = "Rotazione"
+                player.wage = max(2, player.overall_rating() // 30)
+
+    def payroll_per_round(self) -> int:
+        """Return the total wage bill charged after a league fixture."""
+        return sum(max(0, player.wage) for player in self.players)
+
     def team_rating(self) -> int:
         """Average rating of the 11 starters (using effective_rating)."""
         starters = self.get_starters()
