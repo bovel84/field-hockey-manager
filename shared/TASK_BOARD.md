@@ -24,21 +24,26 @@
 ### Task FHM-04: QA Final
 - **State:** 🔄 In Progress
 - **Owner:** Tommy
-- **Artifact input:** review R2 approvata
+- **Artifact input:** review R2 approvata (91/100) + 203 test passanti
 - **Done quando:** QA 0-100, verdict PASS (>=90) o FAIL (<90)
 
 ### Task FHM-05: Fix raccomandati post-merge
-- **State:** ⏳ Inbox
-- **Owner:** TBD (Mario o Zeus)
-- **M1:** PlayoffBracket.__str__ personalizzato
-- **M2:** simulate_cup aggiorna m.home_team/away_team per round > 0
+- **State:** ✅ Done — applicati da Zeus
+- **M1:** PlayoffBracket.__str__ personalizzato ✅
+- **M2:** simulate_cup aggiorna m.home_team/away_team per round > 0 ✅
+
+### Task FHM-07: Save/Load Multi-Slot
+- **State:** ✅ Done — implementato da Zeus
+- **Artifact:** `src/database.py` (save_slots table), `mobile/screens.py` (SaveLoadScreen), `mobile/app.py` (save_game/load_game_slot)
+- **Test:** 16 nuovi test, 203 totali passanti
+- **Commit:** `6ece67e`
 
 ### Task FHM-06: Leonardo Phase 2
-- **State:** ⏳ Inbox
-- **Owner:** Leonardo
+- **State:** ⏳ Inbox (pronto per implementazione)
+- **Owner:** Leonardo (design) → Mario (impl)
 - **Artifact:** `shared/leonardo_suggestions_phase2.md`
-- **Top 3:** Derby/rivalità, Obiettivi stagionali dinamici, Rigori/corti angoli/cartellini verdi
-- **+2:** Youth Academy development, Integrazione narrativa Coppa & Playoff
+- **Top 3:** Derby/rivalità (già impl), Obiettivi stagionali dinamici, Rigori/corti angoli/cartellini verdi
+- **+2:** Youth Academy development (già parziale), Integrazione narrativa Coppa & Playoff (già impl)
 
 ## Anti-Rimbalzo
 - Mario timeout al R1: Zeus ha fatto i fix critici direttamente, poi rilanciato Mario con task più stretto

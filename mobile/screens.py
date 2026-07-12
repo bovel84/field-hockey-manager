@@ -235,7 +235,7 @@ class CalendarioScreen(Screen):
             if is_derby:
                 # Prepend fire emoji to the row label for derby visibility
                 derby_label = Label(
-                    text="🔥 Derby",", font_size="12sp", color=(0.95, 0.4, 0.1, 1),
+                    text="🔥 Derby", font_size="12sp", color=(0.95, 0.4, 0.1, 1),
                     size_hint_y=None, height=18,
                 )
                 self.list_layout.add_widget(derby_label)
