@@ -275,11 +275,21 @@ def _check_injuries(team: Team, rng: random.Random, match: Match) -> None:
         "Bilanciata": 0.015,
         "Offensiva": 0.035,
     }.get(team.intensity, 0.015)
+    pressing_risk = {"Basso": 0.0, "Medio": 0.01, "Alto": 0.035}.get(
+        team.pressing, 0.01
+    )
+    tempo_risk = {
+        "Controllato": 0.0, "Bilanciato": 0.008, "Rapido": 0.025,
+    }.get(team.tempo, 0.008)
     overload_risk = min(
         0.04,
         sum(max(0, player.matches_since_rest - 2) for player in exposed) * 0.003,
     )
-    injury_chance = min(0.22, 0.045 + low_condition_risk + intensity_risk + overload_risk)
+    injury_chance = min(
+        0.28,
+        0.035 + low_condition_risk + intensity_risk
+        + pressing_risk + tempo_risk + overload_risk,
+    )
     if rng.random() >= injury_chance:
         return
 
