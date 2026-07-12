@@ -1,18 +1,156 @@
 """Season management: calendar generation, standings, and training."""
 from __future__ import annotations
+import json
 import math
+import os
 import random
 from dataclasses import dataclass, field
 from itertools import combinations
+from typing import Optional
 from .models import Match, Team, Player, Position
 from .simulation import simulate_match
+
+
+# ---------------------------------------------------------------------
+# League loading from data/leagues.json
+# ---------------------------------------------------------------------
+
+_LEAGUES_CACHE: dict[str, dict] | None = None
+
+
+def _load_leagues_file() -> dict:
+    """Load and cache data/leagues.json."""
+    global _LEAGUES_CACHE
+    if _LEAGUES_CACHE is not None:
+        return _LEAGUES_CACHE
+    here = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(here)
+    path = os.path.join(project_root, "data", "leagues.json")
+    with open(path, "r", encoding="utf-8") as f:
+        _LEAGUES_CACHE = json.load(f)
+    return _LEAGUES_CACHE
+
+
+def list_leagues() -> list[dict]:
+    """Return a list of available leagues with id and name.
+
+    Returns:
+        List of dicts: [{"id": "serie_a_elite", "name": "Serie A Élite", "team_count": 8}, ...]
+    """
+    data = _load_leagues_file()
+    result = []
+    for league_id, league in data.get("leagues", {}).items():
+        result.append({
+            "id": league_id,
+            "name": league.get("name", league_id),
+            "team_count": len(league.get("teams", [])),
+        })
+    return result
+
+
+def load_league(league_id: str) -> dict:
+    """Load league data from data/leagues.json.
+
+    Args:
+        league_id: e.g. "serie_a_elite", "hoofdklasse", "ehl"
+    Returns:
+        League dict with keys: name, country, teams (list of team names), girone
+    Raises:
+        KeyError if league_id not found.
+    """
+    data = _load_leagues_file()
+    leagues = data.get("leagues", {})
+    if league_id not in leagues:
+        raise KeyError(f"League '{league_id}' not found in data/leagues.json")
+    return leagues[league_id]
+
+
+def _load_league_teams(league_id: str) -> list[Team]:
+    """Build Team objects from data/leagues.json for a given league.
+
+    Maps position codes: GK→GOALKEEPER, DEF→DEFENSE, MID→MIDFIELD, FWD→ATTACK.
+    """
+    _POS_MAP = {
+        "GK": Position.GOALKEEPER,
+        "DEF": Position.DEFENSE,
+        "MID": Position.MIDFIELD,
+        "FWD": Position.ATTACK,
+    }
+    data = _load_leagues_file()
+    league = data["leagues"][league_id]
+    team_names = league["teams"]
+    all_teams_data = {t["name"]: t for t in data.get("teams", [])}
+
+    teams: list[Team] = []
+    for tname in team_names:
+        tdata = all_teams_data.get(tname)
+        if tdata is None:
+            teams.append(Team(name=tname, players=[]))
+            continue
+        players = []
+        for pdata in tdata.get("players", []):
+            pos_str = pdata["position"]
+            pos = _POS_MAP.get(pos_str, Position.MIDFIELD)
+            players.append(Player(
+                name=pdata["name"],
+                position=pos,
+                passing=pdata.get("passing", 50),
+                shooting=pdata.get("shooting", 50),
+                defense=pdata.get("defense", 50),
+                speed=pdata.get("speed", 50),
+                stamina=pdata.get("stamina", 50),
+                age=pdata.get("age", 25),
+                morale=pdata.get("morale", 50),
+                potential=pdata.get("potential", 99),
+            ))
+        team = Team(
+            name=tdata["name"],
+            players=players,
+            budget=tdata.get("budget", 500),
+            prestige=tdata.get("prestige", 0),
+            rivals=tdata.get("rivals", []),
+        )
+        teams.append(team)
+    return teams
+
+
+def init_season_for_league(league_id: str, team_name: str) -> tuple[list[Team], "Standings", int, list[dict]]:
+    """Initialize a new season for a specific league and chosen team.
+
+    Loads teams from data/leagues.json, generates the calendar, and
+    initializes empty standings.
+
+    Args:
+        league_id: The league identifier (e.g. "serie_a_elite").
+        team_name: The name of the user's chosen team.
+    Returns:
+        Tuple of (teams list, Standings, user_team_index, calendar).
+    Raises:
+        ValueError if team_name not found in the league.
+    """
+    teams = _load_league_teams(league_id)
+    user_idx = -1
+    for i, t in enumerate(teams):
+        if t.name == team_name:
+            user_idx = i
+            break
+    if user_idx == -1:
+        raise ValueError(f"Team '{team_name}' not found in league '{league_id}'")
+    standings = Standings()
+    calendar = generate_calendar(teams, user_idx)
+    return teams, standings, user_idx, calendar
 
 
 def generate_calendar(teams: list[Team], user_team_index: int = 0) -> list[dict]:
     """
     Generate a round-robin calendar.
 
-    With 6 teams, each team plays 10 matches (home and away vs every other team).
+    Supports leagues with 2-20 teams.
+    - 6 teams → 10 matches (home and away vs every other team)
+    - 8 teams → 14 matches
+    - 12 teams → 22 matches
+    - 20 teams → 38 matches
+
     Returns a list of dicts: {"round": int, "home": team_index, "away": team_index}
     """
     n = len(teams)
@@ -25,7 +163,7 @@ def generate_calendar(teams: list[Team], user_team_index: int = 0) -> list[dict]
 
     # First leg: each pair plays once
     pairs = list(combinations(range(n), 2))
-    # Distribute across rounds — 3 matches per round for 6 teams
+    # Distribute across rounds — n//2 matches per round
     per_round = n // 2
     for i in range(0, len(pairs), per_round):
         chunk = pairs[i : i + per_round]
