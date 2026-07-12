@@ -332,6 +332,20 @@ class PlayoffBracket:
     final: Match | None = None
     winner: Team | None = None
 
+    def __str__(self) -> str:
+        """Human-readable bracket display."""
+        lines: list[str] = []
+        lines.append("  Semifinale 1:")
+        lines.append(f"    {self.semifinal1}")
+        lines.append("  Semifinale 2:")
+        lines.append(f"    {self.semifinal2}")
+        if self.final:
+            lines.append("  Finale:")
+            lines.append(f"    {self.final}")
+        if self.winner:
+            lines.append(f"  Vincitore: {self.winner.name}")
+        return "\n".join(lines)
+
 
 def generate_playoff_bracket(teams: list[Team], standings: Standings, rng: random.Random | None = None) -> PlayoffBracket:
     """Generate a playoff bracket for the top 4 teams.
@@ -536,8 +550,10 @@ def simulate_cup(bracket: CupBracket, seed: int = 0) -> Team:
             # Fill placeholders from previous round winners
             if home is None and round_idx > 0:
                 home = current_winners[match_idx * 2] if match_idx * 2 < len(current_winners) else None
+                m.home_team = home  # M2: update Match for display
             if away is None and round_idx > 0:
                 away = current_winners[match_idx * 2 + 1] if match_idx * 2 + 1 < len(current_winners) else None
+                m.away_team = away  # M2: update Match for display
 
             # Bye match: home advances automatically
             if away is None and home is not None:
