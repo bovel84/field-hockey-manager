@@ -636,6 +636,10 @@ class FieldHockeyManagerApp(App):
     def get_player_price(self, player: Player) -> int:
         return player_price(player)
 
+    def get_incoming_offer(self, player: Player) -> int:
+        interest = 70 + max(-10, min(20, (player.form - 50) // 2))
+        return incoming_offer_value(player, interest)
+
     def save_game(self, slot: int = 1):
         """Save current game state to a save slot (1-3)."""
         if not self.db:
