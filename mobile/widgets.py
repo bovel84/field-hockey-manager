@@ -294,3 +294,297 @@ class MatchResult(BoxLayout):
             bg = CARD_COLOR
             Color(*bg)
             RoundedRectangle(pos=self.pos, size=self.size, radius=[6])
+
+# --- Phase 3: Match 2D Visualization ---
+
+import random as _random
+from kivy.uix.widget import Widget
+from kivy.graphics import Ellipse, Line, Color, Rectangle, PushMatrix, PopMatrix, Translate
+from kivy.clock import Clock
+from kivy.core.text import Label as CoreLabel
+
+
+# Field colors
+FIELD_GREEN = (0.05, 0.36, 0.18, 1)
+FIELD_LINE = (1, 1, 1, 1)
+HOME_COLOR = (0.914, 0.271, 0.376, 1)   # #e94560 red
+AWAY_COLOR = (0.231, 0.510, 0.965, 1)  # #3b82f6 blue
+GK_COLOR = (0.95, 0.62, 0.20, 1)       # orange for goalkeeper
+BALL_COLOR = (1, 1, 1, 1)
+FLASH_COLOR = (1, 1, 1, 0.8)
+
+
+class MatchFieldWidget(Widget):
+    """2D top-down hockey field showing players, ball, and events in real time."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.timeline: list[dict] = []
+        self.match = None
+        self.current_index = 0
+        self.match_time = 0.0
+        self.speed = 1.0
+        self.paused = False
+        self.event_overlay_text = ""
+        self.event_overlay_timer = 0.0
+        self.flash_timer = 0.0
+        self._anim_event = None
+        self._home_positions = []
+        self._away_positions = []
+        self._ball_pos = (0.5, 0.5)
+        self._blink_players: set[int] = set()  # indices of players blinking
+        self._blink_timer = 0.0
+        self.bind(size=self._redraw, pos=self._redraw)
+
+    def set_match(self, match, timeline: list[dict] | None = None):
+        """Set the match data and timeline to visualize."""
+        self.match = match
+        if timeline is None:
+            from src.simulation import generate_match_timeline
+            timeline = generate_match_timeline(match)
+        self.timeline = timeline
+        self.current_index = 0
+        self.match_time = 0.0
+        self.paused = False
+        self.speed = 1.0
+        if self.timeline:
+            self._apply_frame(self.timeline[0])
+
+    def start_animation(self):
+        """Start playing the match animation."""
+        if not self._anim_event:
+            self._anim_event = Clock.schedule_interval(self._tick, 1.0 / 30.0)
+
+    def stop_animation(self):
+        """Stop the match animation."""
+        if self._anim_event:
+            self._anim_event.cancel()
+            self._anim_event = None
+
+    def set_speed(self, speed: float):
+        self.speed = speed
+
+    def pause(self):
+        self.paused = True
+
+    def resume(self):
+        self.paused = False
+
+    def _tick(self, dt):
+        if self.paused or not self.timeline:
+            return
+        # Advance match time: 60 match-minutes in 60/speed real seconds
+        self.match_time += dt * self.speed
+        if self.match_time >= 60.0:
+            self.match_time = 60.0
+            self._apply_frame_at(60.0)
+            self.stop_animation()
+            return
+        self._apply_frame_at(self.match_time)
+        # Update overlay timers
+        if self.event_overlay_timer > 0:
+            self.event_overlay_timer -= dt
+            if self.event_overlay_timer <= 0:
+                self.event_overlay_text = ""
+        if self.flash_timer > 0:
+            self.flash_timer -= dt
+        if self._blink_timer > 0:
+            self._blink_timer -= dt
+            if self._blink_timer <= 0:
+                self._blink_players.clear()
+        self._redraw()
+
+    def _apply_frame_at(self, t: float):
+        """Find and apply the timeline frame at time t."""
+        if not self.timeline:
+            return
+        # Find the last frame with time <= t
+        idx = 0
+        for i, frame in enumerate(self.timeline):
+            if frame["time"] <= t:
+                idx = i
+            else:
+                break
+        # Check if we advanced to a new event
+        if idx != self.current_index:
+            self.current_index = idx
+            self._apply_frame(self.timeline[idx])
+
+    def _apply_frame(self, frame: dict):
+        """Apply a timeline frame: positions + event overlay."""
+        self._home_positions = frame.get("positions", {}).get("home", [])
+        self._away_positions = frame.get("positions", {}).get("away", [])
+        ev = frame.get("event")
+        if ev:
+            self._trigger_event_overlay(ev)
+        # Ball follows the action: move toward team in possession
+        self._ball_pos = self._estimate_ball_pos(ev)
+
+    def _estimate_ball_pos(self, event: dict | None) -> tuple[float, float]:
+        """Estimate ball position based on event."""
+        if not event:
+            return (0.5, 0.5)
+        ev_type = event.get("type", "")
+        team = event.get("team", "home")
+        if "goal" in ev_type:
+            return (0.5, 0.95 if team == "home" else 0.05)
+        elif ev_type == "green_card":
+            return (0.5, 0.5)
+        elif "penalty" in ev_type or "corner" in ev_type:
+            return (0.5, 0.85 if team == "home" else 0.15)
+        return (0.5, 0.5)
+
+    def _trigger_event_overlay(self, event: dict):
+        """Show overlay text for an event."""
+        ev_type = event.get("type", "")
+        overlays = {
+            "goal": f"GOAL! {event.get('scorer', '')}",
+            "corner_goal": f"GOAL! {event.get('scorer', '')} (corto angolo)",
+            "penalty_goal": f"GOAL! {event.get('scorer', '')} (rigore)",
+            "penalty_missed": f"RIGORE SBAGLIATO! {event.get('shooter', '')}",
+            "penalty_corner": "PENALTY CORNER",
+            "green_card": f"🟢 Cartellino verde — {event.get('player', '')}",
+            "injury": f"🏥 Infortunio — {event.get('player', '')}",
+            "substitution": f"🔄 OUT: {event.get('out', '')} → IN: {event.get('in', '')}",
+        }
+        self.event_overlay_text = overlays.get(ev_type, ev_type)
+        self.event_overlay_timer = 3.0  # show for 3 seconds
+
+        # Special effects
+        if "goal" in ev_type:
+            self.flash_timer = 0.3  # white flash
+        if ev_type == "green_card":
+            # Blink the penalized player
+            team = event.get("team", "home")
+            self._blink_players = {0 if team == "home" else 11}  # simplified
+            self._blink_timer = 2.0
+
+    def _redraw(self, *_):
+        """Redraw the field and all elements."""
+        self.canvas.clear()
+        if self.width <= 0 or self.height <= 0:
+            return
+
+        w, h = self.width, self.height
+
+        with self.canvas:
+            # Field background
+            Color(*FIELD_GREEN)
+            Rectangle(pos=self.pos, size=(w, h))
+
+            # Flash effect for goals
+            if self.flash_timer > 0:
+                alpha = self.flash_timer / 0.3 * 0.6
+                Color(1, 1, 1, alpha)
+                Rectangle(pos=self.pos, size=(w, h))
+
+            Color(*FIELD_LINE)
+
+            # Field border
+            margin = 4
+            Line(rectangle=(self.x + margin, self.y + margin, w - 2 * margin, h - 2 * margin), width=1.5)
+
+            # Center line (horizontal at middle of field)
+            cy = self.y + h / 2
+            Line(points=[self.x + margin, cy, self.x + w - margin, cy], width=1.5)
+
+            # Center circle
+            cx = self.x + w / 2
+            r = min(w, h) * 0.08
+            Line(circle=(cx, cy, r), width=1.5)
+            # Center dot
+            Ellipse(pos=(cx - 2, cy - 2), size=(4, 4))
+
+            # 23m areas (top and bottom)
+            area_h = h * 0.2
+            Line(rectangle=(self.x + margin, self.y + margin, w - 2 * margin, area_h), width=1)
+            Line(rectangle=(self.x + margin, self.y + h - margin - area_h, w - 2 * margin, area_h), width=1)
+
+            # Goal areas (smaller rectangles inside 23m)
+            goal_w = w * 0.3
+            goal_x = cx - goal_w / 2
+            goal_area_h = area_h * 0.5
+            Line(rectangle=(goal_x, self.y + margin, goal_w, goal_area_h), width=1)
+            Line(rectangle=(goal_x, self.y + h - margin - goal_area_h, goal_w, goal_area_h), width=1)
+
+            # Penalty spots
+            Ellipse(pos=(cx - 2, self.y + margin + goal_area_h - 2), size=(4, 4))
+            Ellipse(pos=(cx - 2, self.y + h - margin - goal_area_h - 2), size=(4, 4))
+
+            # Draw players
+            self._draw_players(w, h)
+
+            # Draw ball
+            self._draw_ball(w, h)
+
+            # Event overlay text
+            if self.event_overlay_text and self.event_overlay_timer > 0:
+                alpha = min(1.0, self.event_overlay_timer / 1.0)
+                Color(1, 1, 1, alpha * 0.9)
+                # Background rectangle for text
+                lbl = CoreLabel(text=self.event_overlay_text, font_size=16)
+                lbl.refresh()
+                tw, th = lbl.size
+                bx = cx - tw / 2 - 8
+                by = cy - th / 2 - 4
+                Color(0, 0, 0, alpha * 0.7)
+                Rectangle(pos=(bx, by), size=(tw + 16, th + 8))
+                Color(1, 1, 1, alpha)
+                # Draw the text texture
+                if lbl.texture:
+                    Rectangle(pos=(cx - tw / 2, cy - th / 2), size=(tw, th), texture=lbl.texture)
+
+    def _draw_players(self, w, h):
+        """Draw all 22 players as colored circles with numbers."""
+        radius = max(6, min(w, h) * 0.025)
+        all_positions = list(self._home_positions) + list(self._away_positions)
+        for i, pos in enumerate(all_positions):
+            if not pos or len(pos) < 2:
+                continue
+            px = self.x + pos[0] * w
+            py = self.y + pos[1] * h
+
+            # Determine color
+            if i < 11:
+                if i == 0:
+                    color = GK_COLOR  # goalkeeper
+                else:
+                    color = HOME_COLOR
+            else:
+                if i == 11:
+                    color = GK_COLOR  # away goalkeeper
+                else:
+                    color = AWAY_COLOR
+
+            # Blink effect for penalized players
+            if i in self._blink_players and self._blink_timer > 0:
+                if int(self._blink_timer * 10) % 2 == 0:
+                    color = (0.5, 0.5, 0.5, 1)
+
+            with self.canvas:
+                Color(*color)
+                Ellipse(pos=(px - radius, py - radius), size=(radius * 2, radius * 2))
+                # White border
+                Color(1, 1, 1, 0.8)
+                Line(circle=(px, py, radius), width=1)
+                # Player number
+                num = (i % 11) + 1
+                lbl = CoreLabel(text=str(num), font_size=int(radius * 0.9))
+                lbl.refresh()
+                if lbl.texture:
+                    tw, th = lbl.size
+                    Color(1, 1, 1, 1)
+                    Rectangle(pos=(px - tw / 2, py - th / 2), size=(tw, th), texture=lbl.texture)
+
+    def _draw_ball(self, w, h):
+        """Draw the ball as a small white circle."""
+        if not self._ball_pos or len(self._ball_pos) < 2:
+            return
+        px = self.x + self._ball_pos[0] * w
+        py = self.y + self._ball_pos[1] * h
+        radius = max(3, min(w, h) * 0.012)
+        with self.canvas:
+            Color(*BALL_COLOR)
+            Ellipse(pos=(px - radius, py - radius), size=(radius * 2, radius * 2))
+            Color(0.8, 0.8, 0.8, 1)
+            Line(circle=(px, py, radius), width=0.5)

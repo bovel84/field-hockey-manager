@@ -40,11 +40,17 @@
 - **Commit:** `6ece67e`
 
 ### Task FHM-06: Leonardo Phase 2
-- **State:** ⏳ Inbox (pronto per implementazione)
-- **Owner:** Leonardo (design) → Mario (impl)
+- **State:** ✅ Done — tutte e 5 le feature implementate
+- **Owner:** Leonardo (design) → Zeus (impl)
 - **Artifact:** `shared/leonardo_suggestions_phase2.md`
-- **Top 3:** Derby/rivalità (già impl), Obiettivi stagionali dinamici, Rigori/corti angoli/cartellini verdi
-- **+2:** Youth Academy development (già parziale), Integrazione narrativa Coppa & Playoff (già impl)
+- **Implementate:**
+  1. ✅ Derby e rivalità (Mario ciclo 2)
+  2. ✅ Obiettivi stagionali dinamici (Zeus — `_generate_season_goals` + `_evaluate_season_goals`)
+  3. ✅ Rigori/corti angoli/cartellini verdi (Zeus — `_check_green_card`, `_check_penalty_corner`, `_check_penalty`)
+  4. ✅ Youth Academy development (Mario ciclo 2)
+  5. ✅ Integrazione narrativa Coppa & Playoff (Mario ciclo 2)
+- **Test:** 23 nuovi test, 226 totali passanti
+- **Commit:** `3a18a7d`
 
 ## Anti-Rimbalzo
 - Mario timeout al R1: Zeus ha fatto i fix critici direttamente, poi rilanciato Mario con task più stretto

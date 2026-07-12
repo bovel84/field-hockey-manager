@@ -460,3 +460,163 @@ def _check_penalty(atk: Team, def_: Team, rng: random.Random, quarter: int, side
                 "shooter": shooter.name,
             }
     return None
+
+# --- Phase 3: Match timeline + commentary ---
+
+def generate_match_timeline(match: Match) -> list[dict]:
+    """Generate a timeline of match states for 2D visualization.
+
+    Each element: {"time": float, "event": dict|None, "positions": {"home": [...], "away": [...]}}
+    Time goes from 0 to 60 (match minutes). Events are placed at their minute.
+    Between events, players oscillate slightly around their formation positions.
+
+    Args:
+        match: A played Match object with events.
+    Returns:
+        Sorted list of timeline frames.
+    """
+    from .models import get_formation_positions
+
+    if not match.played:
+        return []
+
+    home_formation = match.home_team.formation
+    away_formation = match.away_team.formation
+    home_base = get_formation_positions(home_formation, away=False)
+    away_base = get_formation_positions(away_formation, away=True)
+
+    rng = random.Random(hash(match.home_team.name + match.away_team.name) & 0xFFFFFFFF)
+
+    # Collect all event times
+    event_times = []
+    for ev in match.events:
+        minute = ev.get("minute", 0)
+        event_times.append(minute)
+    event_times.sort()
+
+    # Generate frames at each event time + start (0) + end (60)
+    all_times = sorted(set([0.0] + event_times + [60.0]))
+    timeline = []
+
+    for t in all_times:
+        # Find event at this time (if any)
+        event_at_t = None
+        for ev in match.events:
+            if ev.get("minute", 0) == t:
+                event_at_t = ev
+                break
+
+        # Generate positions with small random offset for liveliness
+        home_pos = []
+        for (bx, by) in home_base:
+            ox = (rng.random() - 0.5) * 0.04
+            oy = (rng.random() - 0.5) * 0.04
+            home_pos.append((max(0.0, min(1.0, bx + ox)), max(0.0, min(1.0, by + oy))))
+
+        away_pos = []
+        for (bx, by) in away_base:
+            ox = (rng.random() - 0.5) * 0.04
+            oy = (rng.random() - 0.5) * 0.04
+            away_pos.append((max(0.0, min(1.0, bx + ox)), max(0.0, min(1.0, by + oy))))
+
+        timeline.append({
+            "time": float(t),
+            "event": event_at_t,
+            "positions": {"home": home_pos, "away": away_pos},
+        })
+
+    return timeline
+
+
+# Commentary templates for each event type
+_COMMENTARY_TEMPLATES: dict[str, list[str]] = {
+    "goal": [
+        "📻 {minute}' — GOAL! {scorer} ({team}) brilla e segna! {score}",
+        "📻 {minute}' — Che gol! {scorer} ({team}) non sbaglia! {score}",
+        "📻 {minute}' — Rete! {scorer} ({team}) regala l'esultanza ai tifosi! {score}",
+        "📻 {minute}' — Palla in fondo alla rete! {scorer} ({team}) firma il gol. {score}",
+    ],
+    "corner_goal": [
+        "📻 {minute}' — Corto angolo perfetto! {scorer} ({team}) converte! {score}",
+        "📡 {minute}' — Penalty corner e GOAL! {scorer} ({team}) è implacabile! {score}",
+        "📻 {minute}' — Truffa difensiva sul corto angolo: {scorer} ({team}) segna! {score}",
+    ],
+    "penalty_goal": [
+        "🎯 {minute}' — Rigore trasformato! {scorer} ({team}) è freddo come il ghiaccio! {score}",
+        "📻 {minute}' — Penalty stroke e gol! {scorer} ({team}) non ha esitazioni! {score}",
+        "🎯 {minute}' — Massima tensione, ma {scorer} ({team}) segna! {score}",
+    ],
+    "penalty_missed": [
+        "❌ {minute}' — Rigore sbagliato! {shooter} ({team}) trema dal dispiacere!",
+        "🥅 {minute}' — Parata miracolosa! {shooter} ({team}) non trova la rete!",
+        "❌ {minute}' — Penalty stroke perso! {shooter} ({team}) non ci crede!",
+    ],
+    "penalty_corner": [
+        "📐 {minute}' — Corto angolo per {team}, ma la difesa respinge!",
+        "📐 {minute}' — Penalty corner {team}: la palla esce, occasione persa.",
+    ],
+    "green_card": [
+        "🟢 {minute}' — Cartellino verde per {player} ({team}): 2 minuti di sospensione!",
+        "🟢 {minute}' — {player} ({team}) viene sanzionato: la squadra resta in 10!",
+    ],
+    "injury": [
+        "🔴 {minute}' — Infortunio per {player} ({team})! Sarà fuori {duration} partite.",
+        "🏥 {minute}' — {player} ({team}) esca per infortunio: giornata sfortunata!",
+    ],
+    "substitution": [
+        "🔄 {minute}' — Sostituzione {team}: fuori {out}, dentro {in}!",
+        "🔄 {minute}' — Cambio {team}: {out} cede il posto a {in}.",
+    ],
+    "quarter_end": [
+        "⏱️ Fine del {quarter}° quarto. Risultato: {score}",
+        "📋 Fine {quarter}° quarto. {score}",
+    ],
+}
+
+_DERBY_COMMENTS = [
+    "Derby infuocato! Il tifo è da pelle d'oca!",
+    "Rivalità accesa: ogni palla è una battaglia!",
+    "Il derby non perdona: intensità al massimo!",
+]
+
+
+def generate_commentary(match: Match, event: dict, derby: bool = False) -> str:
+    """Generate a live commentary string for a match event.
+
+    Args:
+        match: The Match object (for context: team names, score, derby).
+        event: Event dict with type, minute, team, scorer/player/shooter, etc.
+        derby: If True, add derby flavor to the commentary.
+    Returns:
+        Commentary string.
+    """
+    ev_type = event.get("type", "")
+    minute = event.get("minute", 0)
+    team = event.get("team", "")
+    scorer = event.get("scorer", "")
+    shooter = event.get("shooter", "")
+    player = event.get("player", "")
+    out_name = event.get("out", "")
+    in_name = event.get("in", "")
+    duration = event.get("duration", 0)
+    quarter = event.get("quarter", 0)
+
+    # Build score string at this point in the match
+    score = f"{match.home_team.name} {match.home_score} - {match.away_score} {match.away_team.name}"
+
+    templates = _COMMENTARY_TEMPLATES.get(ev_type, ["📻 {minute}' — Evento: {type}"])
+    # Seeded choice based on match + minute for reproducibility
+    rng = random.Random(hash(match.home_team.name + str(minute) + ev_type) & 0xFFFFFFFF)
+    template = rng.choice(templates)
+
+    comment = template.format(
+        minute=minute, team=team, scorer=scorer, shooter=shooter,
+        player=player, **{"out": out_name, "in": in_name}, duration=duration,
+        quarter=quarter, score=score, type=ev_type,
+    )
+
+    if derby and ev_type in ("goal", "corner_goal", "penalty_goal"):
+        derby_comment = rng.choice(_DERBY_COMMENTS)
+        comment += f" {derby_comment}"
+
+    return comment

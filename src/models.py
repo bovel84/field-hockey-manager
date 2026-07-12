@@ -13,6 +13,45 @@ class Position(Enum):
     ATTACK = "Attacco"
 
 
+# Normalized formation positions (0.0-1.0). y=0 is own goal, y=1 is opponent goal.
+# Each formation lists 11 positions: 1 GK + DEF + MID + ATT
+FORMATION_POSITIONS: dict[str, list[tuple[float, float]]] = {
+    "4-3-3": [
+        (0.50, 0.05),  # GK
+        (0.20, 0.25), (0.40, 0.22), (0.60, 0.22), (0.80, 0.25),  # 4 DEF
+        (0.25, 0.48), (0.50, 0.45), (0.75, 0.48),  # 3 MID
+        (0.25, 0.72), (0.50, 0.75), (0.75, 0.72),  # 3 ATT
+    ],
+    "4-4-2": [
+        (0.50, 0.05),  # GK
+        (0.20, 0.25), (0.40, 0.22), (0.60, 0.22), (0.80, 0.25),  # 4 DEF
+        (0.15, 0.48), (0.38, 0.45), (0.62, 0.45), (0.85, 0.48),  # 4 MID
+        (0.40, 0.72), (0.60, 0.72),  # 2 ATT
+    ],
+    "3-5-2": [
+        (0.50, 0.05),  # GK
+        (0.30, 0.22), (0.50, 0.20), (0.70, 0.22),  # 3 DEF
+        (0.15, 0.45), (0.35, 0.48), (0.50, 0.42), (0.65, 0.48), (0.85, 0.45),  # 5 MID
+        (0.40, 0.72), (0.60, 0.72),  # 2 ATT
+    ],
+    "5-3-2": [
+        (0.50, 0.05),  # GK
+        (0.12, 0.25), (0.30, 0.20), (0.50, 0.18), (0.70, 0.20), (0.88, 0.25),  # 5 DEF
+        (0.25, 0.48), (0.50, 0.45), (0.75, 0.48),  # 3 MID
+        (0.40, 0.72), (0.60, 0.72),  # 2 ATT
+    ],
+}
+
+
+def get_formation_positions(formation: str, away: bool = False) -> list[tuple[float, float]]:
+    """Return 11 normalized positions for a formation.
+    If away=True, mirror y coordinates (y → 1-y)."""
+    positions = FORMATION_POSITIONS.get(formation, FORMATION_POSITIONS["4-3-3"])
+    if away:
+        return [(x, 1.0 - y) for (x, y) in positions]
+    return list(positions)
+
+
 # Weighting for overall rating by position
 _POSITION_WEIGHTS: dict[Position, dict[str, float]] = {
     Position.GOALKEEPER: {"passing": 0.10, "shooting": 0.05, "defense": 0.45, "speed": 0.15, "stamina": 0.25},

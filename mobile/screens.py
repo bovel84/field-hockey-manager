@@ -336,15 +336,35 @@ class PartitaScreen(Screen):
         self.play_btn = styled_button("🏒 Simula Partita", self._play_match)
         self.layout.add_widget(self.play_btn)
 
-        self.result_label = Label(text="", font_size="18sp", bold=True, color=TEXT_COLOR, size_hint_y=None, height=50)
+        self.result_label = Label(text="", font_size="18sp", bold=True, color=TEXT_COLOR, size_hint_y=None, height=40)
         self.layout.add_widget(self.result_label)
 
-        self.events_label = Label(
-            text="", font_size="13sp", color=(0.7, 0.8, 0.9, 1),
-            size_hint_y=None, height=120, valign="top", halign="left",
+        # 2D match field widget
+        from mobile.widgets import MatchFieldWidget
+        self.field_widget = MatchFieldWidget(size_hint_y=0.45)
+        self.layout.add_widget(self.field_widget)
+
+        # Speed controls
+        speed_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=40, spacing=6)
+        self.pause_btn = styled_button("⏸️ Pausa", self._toggle_pause)
+        self.speed_1x = styled_button("1x", lambda _: self._set_speed(1.0))
+        self.speed_2x = styled_button("2x", lambda _: self._set_speed(2.0))
+        self.speed_4x = styled_button("4x", lambda _: self._set_speed(4.0))
+        self.skip_btn = styled_button("⏭️ Salta", self._skip_to_end)
+        speed_row.add_widget(self.pause_btn)
+        speed_row.add_widget(self.speed_1x)
+        speed_row.add_widget(self.speed_2x)
+        speed_row.add_widget(self.speed_4x)
+        speed_row.add_widget(self.skip_btn)
+        self.layout.add_widget(speed_row)
+
+        # Commentary feed
+        self.commentary_label = Label(
+            text="", font_size="12sp", color=(0.85, 0.9, 0.95, 1),
+            size_hint_y=None, height=100, valign="top", halign="left",
         )
-        self.events_label.bind(size=lambda inst, _value=None: setattr(inst, "text_size", inst.size))
-        self.layout.add_widget(self.events_label)
+        self.commentary_label.bind(size=lambda inst, _value=None: setattr(inst, "text_size", inst.size))
+        self.layout.add_widget(self.commentary_label)
 
         self.layout.add_widget(styled_button("⬅️ Indietro", lambda _: setattr(app.sm, 'current', 'menu')))
         self.add_widget(self.layout)
@@ -367,7 +387,8 @@ class PartitaScreen(Screen):
             self.info_label.text = "Stagione finita! 🎉"
             self.play_btn.disabled = True
         self.result_label.text = ""
-        self.events_label.text = ""
+        self.commentary_label.text = ""
+        self.field_widget.canvas.clear()
 
     def _play_match(self, _):
         # Collect user-chosen substitutions (pairs: out, in)
@@ -389,11 +410,37 @@ class PartitaScreen(Screen):
         )
         self.result_label.text = f"{match.home_team.name} {match.home_score} - {match.away_score} {match.away_team.name}"
         self.result_label.color = c
-        events_text = "\n".join(
-            f"{ev.get('minute', '?')}' - {ev.get('type', '')}: {ev.get('scorer') or ev.get('player', '')}"
-            for ev in match.events
-        )
-        self.events_label.text = events_text or "Nessun evento"
+
+        # Generate 2D timeline and start animation
+        from src.simulation import generate_match_timeline, generate_commentary
+        timeline = generate_match_timeline(match)
+        self.field_widget.set_match(match, timeline)
+        self.field_widget.start_animation()
+
+        # Generate commentary feed
+        is_derby = match.away_team.name in (match.home_team.rivals or [])
+        comments = []
+        for ev in match.events:
+            comments.append(generate_commentary(match, ev, derby=is_derby))
+        self.commentary_label.text = "\n".join(comments) if comments else "Nessun evento"
+
+    def _toggle_pause(self, _):
+        if self.field_widget.paused:
+            self.field_widget.resume()
+            self.pause_btn.text = "⏸️ Pausa"
+        else:
+            self.field_widget.pause()
+            self.pause_btn.text = "▶️ Riprendi"
+
+    def _set_speed(self, speed):
+        self.field_widget.set_speed(speed)
+
+    def _skip_to_end(self, _):
+        self.field_widget.stop_animation()
+        self.field_widget.match_time = 60.0
+        if self.field_widget.timeline:
+            self.field_widget._apply_frame(self.field_widget.timeline[-1])
+        self.field_widget._redraw()
 
 
 # ── Statistiche ─────────────────────────────────────────────────
