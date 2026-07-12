@@ -21,7 +21,8 @@ from src.models import Player, Team, Match, Position
 from src.database import Database
 from src.season import (
     generate_calendar, train_player,
-    generate_free_agents, player_price,
+    generate_free_agents, player_price, minimum_wage,
+    evaluate_transfer_offer, incoming_offer_value,
     MAX_TRAININGS_PER_WEEK, TRAINING_ATTRIBUTES,
     age_player_one_year, season_aging,
 )
@@ -561,21 +562,76 @@ class FieldHockeyManagerApp(App):
             return f"✅ {player.name} ha migliorato {attr} (+{result})"
         return f"⚠️ {player.name} non ha migliorato {attr}"
 
-    def buy_player(self, player: Player) -> bool:
-        if not self.user_team:
-            return False
-        price = player_price(player)
-        if self.user_team.budget < price:
-            return False
-        same_pos = [p for p in self.user_team.players if p.position == player.position]
-        if same_pos:
-            weakest = min(same_pos, key=lambda p: p.overall_rating())
-            self.user_team.players.remove(weakest)
-        self.user_team.players.append(player)
-        self.user_team.budget -= price
+    def negotiate_transfer(
+        self,
+        player: Player,
+        fee: int,
+        wage: int,
+        years: int,
+        squad_role: str = "Rotazione",
+    ) -> tuple[bool, str]:
+        """Negotiate and complete an incoming transfer."""
+        team = self.user_team
+        if not team:
+            return False, "Nessuna squadra selezionata."
+        if len(team.players) >= 24:
+            return False, "Rosa completa: vendi un giocatore prima di acquistare."
+        total_cost = fee + wage * years
+        if team.budget < total_cost:
+            return False, f"Servono {total_cost} crediti tra cartellino e bonus."
+        accepted, message = evaluate_transfer_offer(
+            player, fee, wage, years, squad_role,
+        )
+        if not accepted:
+            player.happiness = max(0, player.happiness - 2)
+            return False, message
+
+        player.wage = wage
+        player.contract_years = years
+        player.squad_role = squad_role
+        player.happiness = min(100, player.happiness + 8)
+        team.players.append(player)
+        team.budget -= total_cost
         if player in self.free_agents:
             self.free_agents.remove(player)
-        return True
+        self.career_news.insert(
+            0,
+            f"Nuovo acquisto: {player.name} per {fee}, contratto di {years} anni.",
+        )
+        self.career_news = self.career_news[:6]
+        self.save_game()
+        return True, "Trasferimento completato."
+
+    def buy_player(self, player: Player) -> bool:
+        """Backward-compatible purchase using a fair default proposal."""
+        role = "Rotazione"
+        accepted, _message = self.negotiate_transfer(
+            player,
+            player_price(player),
+            minimum_wage(player, role),
+            3,
+            role,
+        )
+        return accepted
+
+    def sell_player(self, player: Player, interest: int = 75) -> tuple[bool, str, int]:
+        """Accept an external offer for a squad player."""
+        team = self.user_team
+        if not team or player not in team.players:
+            return False, "Giocatore non disponibile.", 0
+        if len(team.players) <= 12:
+            return False, "La rosa non può scendere sotto 12 giocatori.", 0
+        fee = incoming_offer_value(player, interest)
+        team.players.remove(player)
+        team.budget += fee
+        player.squad_role = "Rotazione"
+        player.happiness = 60
+        if player not in self.free_agents:
+            self.free_agents.append(player)
+        self.career_news.insert(0, f"Cessione: {player.name} per {fee} crediti.")
+        self.career_news = self.career_news[:6]
+        self.save_game()
+        return True, "Offerta accettata.", fee
 
     def get_player_price(self, player: Player) -> int:
         return player_price(player)
