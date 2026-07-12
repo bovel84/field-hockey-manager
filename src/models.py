@@ -212,6 +212,8 @@ class Team:
     budget: int = 500
     formation: str = "4-3-3"
     intensity: str = "Bilanciata"
+    pressing: str = "Medio"
+    tempo: str = "Bilanciato"
     prestige: int = 0  # Prestige from cup wins and playoff results
     youth_players: list[Player] = field(default_factory=list)  # Youth academy prospects
     rivals: list[str] = field(default_factory=list)  # Feature 2: rival teams for derby detection
