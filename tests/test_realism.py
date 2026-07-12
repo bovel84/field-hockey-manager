@@ -186,3 +186,69 @@ def test_unhappy_player_attracts_lower_offer():
     happy = make_player(happiness=80)
     unhappy = make_player(happiness=20)
     assert incoming_offer_value(happy, 75) > incoming_offer_value(unhappy, 75)
+
+
+def test_high_press_and_fast_tempo_consume_more_condition():
+    conservative = make_player(condition=100)
+    aggressive = make_player(condition=100)
+    conservative.apply_match_load(
+        "Bilanciata", pressing="Basso", tempo="Controllato",
+    )
+    aggressive.apply_match_load(
+        "Bilanciata", pressing="Alto", tempo="Rapido",
+    )
+    assert aggressive.condition < conservative.condition
+
+
+def test_tactical_modifiers_balance_reward_and_risk():
+    from src.simulation import _PRESSING_MODIFIERS, _TEMPO_MODIFIERS
+
+    low_press = _PRESSING_MODIFIERS["Basso"]
+    high_press = _PRESSING_MODIFIERS["Alto"]
+    assert high_press[0] > low_press[0]
+    assert high_press[2] > low_press[2]
+    assert _TEMPO_MODIFIERS["Rapido"][0] > _TEMPO_MODIFIERS["Controllato"][0]
+    assert _TEMPO_MODIFIERS["Rapido"][2] > _TEMPO_MODIFIERS["Controllato"][2]
+
+
+def test_advanced_tactics_are_persisted(tmp_path):
+    from src.database import Database
+    from src.models import Team
+
+    database = Database(str(tmp_path / "tactics.db"))
+    database.init()
+    team = Team(
+        name="Tactical HC",
+        players=[make_player(name=f"Player {index}") for index in range(12)],
+        pressing="Alto",
+        tempo="Rapido",
+    )
+    database.save_team(team)
+    loaded = database.load_team("Tactical HC")
+    assert loaded is not None
+    assert loaded.pressing == "Alto"
+    assert loaded.tempo == "Rapido"
+
+
+def test_simulation_accepts_advanced_match_plan():
+    from src.models import Team
+    from src.simulation import simulate_match
+
+    home = Team(
+        name="Home",
+        players=[make_player(name=f"H{index}") for index in range(12)],
+    )
+    away = Team(
+        name="Away",
+        players=[make_player(name=f"A{index}") for index in range(12)],
+    )
+    match = simulate_match(
+        home,
+        away,
+        seed=99,
+        home_pressing="Alto",
+        home_tempo="Rapido",
+        away_pressing="Basso",
+        away_tempo="Controllato",
+    )
+    assert match.played is True
