@@ -256,7 +256,7 @@ def player_price(player: Player) -> int:
 # Youth Academy
 # ---------------------------------------------------------------------
 
-def generate_youth_prospects(team: Team, rng: random.Random | None = None) -> list[Player]:
+def generate_youth_prospects(team: Team, rng: random.Random | None = None, seed: int | None = None) -> list[Player]:
     """Generate 1-2 youth prospects for a team's academy.
 
     Each prospect is 16-18 years old with rating 40-60 and high potential
@@ -266,9 +266,13 @@ def generate_youth_prospects(team: Team, rng: random.Random | None = None) -> li
     Args:
         team: The team generating youth prospects (used for prestige-based bonuses).
         rng: Optional random number generator for deterministic tests.
+        seed: Optional integer seed — if provided, creates a deterministic RNG
+              (ignored if *rng* is also supplied).
     Returns:
         List of 1-2 young Player objects.
     """
+    if rng is None and seed is not None:
+        rng = random.Random(seed)
     if rng is None:
         rng = random.Random()
     count = rng.randint(1, 2)
@@ -335,6 +339,10 @@ def generate_playoff_bracket(teams: list[Team], standings: Standings, rng: rando
     Seedings: 1st vs 4th, 2nd vs 3rd (single-leg semifinals).
     The final is also single-leg.
 
+    If fewer than 4 teams are available, a smaller bracket is created:
+    - 3 teams: 1st gets a bye to the final, 2nd vs 3rd play a semifinal.
+    - 2 teams: a single final match.
+
     Args:
         teams: All teams in the league.
         standings: Final standings after the regular season.
@@ -345,19 +353,36 @@ def generate_playoff_bracket(teams: list[Team], standings: Standings, rng: rando
     if rng is None:
         rng = random.Random()
     ranking = standings.get_ranking()
-    if len(ranking) < 4:
-        raise ValueError("Need at least 4 teams for playoff bracket")
+    if len(ranking) < 2:
+        raise ValueError("Need at least 2 teams for playoff bracket")
 
     # Map team names to Team objects
     team_map = {t.name: t for t in teams}
-    top4_names = [r["team_name"] for r in ranking[:4]]
-    top4_teams = [team_map[name] for name in top4_names if name in team_map]
-    if len(top4_teams) < 4:
-        raise ValueError("Could not find all top 4 teams")
+    top_names = [r["team_name"] for r in ranking]
+    top_teams = [team_map[name] for name in top_names if name in team_map]
+    if len(top_teams) < 2:
+        raise ValueError("Could not find enough teams for playoff bracket")
 
-    # Semifinals: 1st vs 4th, 2nd vs 3rd
-    sf1 = Match(home_team=top4_teams[0], away_team=top4_teams[3])
-    sf2 = Match(home_team=top4_teams[1], away_team=top4_teams[2])
+    if len(top_teams) >= 4:
+        # Standard bracket: 1st vs 4th, 2nd vs 3rd
+        sf1 = Match(home_team=top_teams[0], away_team=top_teams[3])
+        sf2 = Match(home_team=top_teams[1], away_team=top_teams[2])
+    elif len(top_teams) == 3:
+        # 3 teams: 1st gets a bye, 2nd vs 3rd play semifinal
+        # Use a dummy bye match for sf1 (1st advances automatically)
+        sf1 = Match(home_team=top_teams[0], away_team=top_teams[0])  # bye
+        sf1.home_score = 1
+        sf1.away_score = 0
+        sf1.played = True
+        sf2 = Match(home_team=top_teams[1], away_team=top_teams[2])
+    else:  # 2 teams
+        # Single final: use sf1 as the final, sf2 is a placeholder
+        sf1 = Match(home_team=top_teams[0], away_team=top_teams[1])
+        sf2 = Match(home_team=top_teams[0], away_team=top_teams[0])  # bye placeholder
+        sf2.home_score = 1
+        sf2.away_score = 0
+        sf2.played = True
+
     return PlayoffBracket(semifinal1=sf1, semifinal2=sf2)
 
 
@@ -365,7 +390,7 @@ def simulate_playoff(bracket: PlayoffBracket, seed: int = 0) -> Team:
     """Simulate a playoff bracket and return the winner.
 
     Semifinals and final are single-leg matches. The higher-seeded team
-    gets home advantage.
+    gets home advantage. Byes (pre-played matches) are respected.
 
     Args:
         bracket: A PlayoffBracket with semifinals set up.
@@ -373,24 +398,26 @@ def simulate_playoff(bracket: PlayoffBracket, seed: int = 0) -> Team:
     Returns:
         The winning Team.
     """
-    # Simulate semifinal 1
-    sf1 = simulate_match(bracket.semifinal1.home_team, bracket.semifinal1.away_team,
-                         seed=seed)
-    bracket.semifinal1.home_score = sf1.home_score
-    bracket.semifinal1.away_score = sf1.away_score
-    bracket.semifinal1.played = True
-    bracket.semifinal1.events = sf1.events
-    sf1_winner = bracket.semifinal1.home_team if sf1.home_score >= sf1.away_score else bracket.semifinal1.away_team
+    # Simulate semifinal 1 (skip if already played — bye match)
+    if not bracket.semifinal1.played:
+        sf1 = simulate_match(bracket.semifinal1.home_team, bracket.semifinal1.away_team,
+                             seed=seed)
+        bracket.semifinal1.home_score = sf1.home_score
+        bracket.semifinal1.away_score = sf1.away_score
+        bracket.semifinal1.played = True
+        bracket.semifinal1.events = sf1.events
     # In case of draw, home team advances (higher seed advantage)
+    sf1_winner = bracket.semifinal1.home_team if bracket.semifinal1.home_score >= bracket.semifinal1.away_score else bracket.semifinal1.away_team
 
-    # Simulate semifinal 2
-    sf2 = simulate_match(bracket.semifinal2.home_team, bracket.semifinal2.away_team,
-                         seed=seed + 1)
-    bracket.semifinal2.home_score = sf2.home_score
-    bracket.semifinal2.away_score = sf2.away_score
-    bracket.semifinal2.played = True
-    bracket.semifinal2.events = sf2.events
-    sf2_winner = bracket.semifinal2.home_team if sf2.home_score >= sf2.away_score else bracket.semifinal2.away_team
+    # Simulate semifinal 2 (skip if already played — bye match)
+    if not bracket.semifinal2.played:
+        sf2 = simulate_match(bracket.semifinal2.home_team, bracket.semifinal2.away_team,
+                             seed=seed + 1)
+        bracket.semifinal2.home_score = sf2.home_score
+        bracket.semifinal2.away_score = sf2.away_score
+        bracket.semifinal2.played = True
+        bracket.semifinal2.events = sf2.events
+    sf2_winner = bracket.semifinal2.home_team if bracket.semifinal2.home_score >= bracket.semifinal2.away_score else bracket.semifinal2.away_team
 
     # Simulate final
     final = Match(home_team=sf1_winner, away_team=sf2_winner)
@@ -418,6 +445,18 @@ class CupBracket:
     """Bracket for the Coppa Nazionale (single-elimination knockout cup)."""
     rounds: list[list[Match]] = field(default_factory=list)  # Each round is a list of matches
     winner: Team | None = None
+
+    def __str__(self) -> str:
+        """Human-readable bracket display showing each round and its matches."""
+        lines: list[str] = []
+        for i, round_matches in enumerate(self.rounds):
+            label = f"Round {i + 1}"
+            lines.append(f"  {label}:")
+            for m in round_matches:
+                lines.append(f"    {m}")
+        if self.winner:
+            lines.append(f"  Vincitore: {self.winner.name}")
+        return "\n".join(lines) if lines else "CupBracket (vuoto)"
 
 
 def generate_cup_bracket(teams: list[Team], rng: random.Random | None = None) -> CupBracket:

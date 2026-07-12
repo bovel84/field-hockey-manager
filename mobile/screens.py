@@ -16,7 +16,10 @@ if _root not in sys.path:
     sys.path.insert(0, _root)
 
 from src.models import Player, Team, Match, Position
-from src.season import TRAINING_ATTRIBUTES, MAX_TRAININGS_PER_WEEK
+from src.season import (
+    TRAINING_ATTRIBUTES, MAX_TRAININGS_PER_WEEK,
+    generate_youth_prospects, promote_youth_player,
+)
 
 from mobile.widgets import (
     BG_COLOR, ACCENT_COLOR, TEXT_COLOR, CARD_COLOR,
@@ -34,10 +37,11 @@ def make_screen_bg(widget):
     with widget.canvas.before:
         Color(*BG_COLOR)
         RoundedRectangle(pos=widget.pos, size=widget.size)
-    widget.bind(pos=lambda inst, v: _upd(inst), size=lambda inst, v: _upd(inst))
+    widget.bind(pos=lambda inst, v: _update_bg_rect(inst), size=lambda inst, v: _update_bg_rect(inst))
 
 
-def _upd(widget):
+def _update_bg_rect(widget):
+    """Redraw the background rectangle after a layout change."""
     widget.canvas.before.clear()
     with widget.canvas.before:
         Color(*BG_COLOR)
@@ -92,6 +96,7 @@ class MenuScreen(Screen):
         layout.add_widget(styled_button("📊 Statistiche", lambda _: setattr(app.sm, 'current', 'statistiche')))
         layout.add_widget(styled_button("🏋️ Allenamenti", lambda _: setattr(app.sm, 'current', 'allenamenti')))
         layout.add_widget(styled_button("💰 Mercato", lambda _: setattr(app.sm, 'current', 'mercato')))
+        layout.add_widget(styled_button("🌱 Youth Academy", lambda _: setattr(app.sm, 'current', 'youth')))
         layout.add_widget(styled_button("💾 Salva", lambda _: app.save_game()))
         layout.add_widget(styled_button("🚪 Esci", lambda _: app.stop(), bg_color=(0.5, 0.2, 0.2, 1)))
 
@@ -193,7 +198,7 @@ class ClassificaScreen(Screen):
             with row.canvas.before:
                 Color(*bg)
                 RoundedRectangle(pos=row.pos, size=row.size, radius=[4])
-            row.bind(pos=lambda inst, v: _upd(inst), size=lambda inst, v: _upd(inst))
+            row.bind(pos=lambda inst, v: _update_bg_rect(inst), size=lambda inst, v: _update_bg_rect(inst))
             row.add_widget(Label(text=team.name[:14], font_size="13sp", color=TEXT_COLOR))
             row.add_widget(Label(text=str(team.points), font_size="13sp", color=TEXT_COLOR))
             row.add_widget(Label(text=str(team.wins), font_size="13sp", color=TEXT_COLOR))
@@ -231,6 +236,25 @@ class PartitaScreen(Screen):
         self.layout.add_widget(Label(text="Intensità:", font_size="14sp", color=TEXT_COLOR, size_hint_y=None, height=28))
         self.layout.add_widget(self.intensity_spinner)
 
+        # --- Substitution selection (C3) ---
+        self.subs_label = Label(
+            text="Sostituzioni (max 3, opzionale):",
+            font_size="14sp", color=TEXT_COLOR, size_hint_y=None, height=28,
+        )
+        self.layout.add_widget(self.subs_label)
+        self.sub_spinners: list[Spinner] = []
+        for i in range(3):
+            sub_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=44, spacing=4)
+            out_spin = Spinner(text="—", values=[], size_hint_x=0.5, font_size="13sp")
+            in_spin = Spinner(text="—", values=[], size_hint_x=0.5, font_size="13sp")
+            self.sub_spinners.append(out_spin)
+            self.sub_spinners.append(in_spin)
+            sub_row.add_widget(Label(text="Out:", font_size="12sp", color=(0.86,0.2,0.2,1), size_hint_x=0.15))
+            sub_row.add_widget(out_spin)
+            sub_row.add_widget(Label(text="In:", font_size="12sp", color=(0.2,0.78,0.35,1), size_hint_x=0.15))
+            sub_row.add_widget(in_spin)
+            self.layout.add_widget(sub_row)
+
         self.play_btn = styled_button("🏒 Simula Partita", self._play_match)
         self.layout.add_widget(self.play_btn)
 
@@ -254,6 +278,13 @@ class PartitaScreen(Screen):
             away = self.app.teams[entry["away"]]
             self.info_label.text = f"{home.name} vs {away.name}"
             self.play_btn.disabled = False
+            # Populate substitution spinners with squad players
+            team = self.app.user_team
+            if team:
+                player_names = [p.name for p in team.players if p.can_play()]
+                for spin in self.sub_spinners:
+                    spin.values = ["—"] + player_names
+                    spin.text = "—"
         else:
             self.info_label.text = "Stagione finita! 🎉"
             self.play_btn.disabled = True
@@ -261,7 +292,18 @@ class PartitaScreen(Screen):
         self.events_label.text = ""
 
     def _play_match(self, _):
-        match = self.app.play_next_match(self.formation_spinner.text, self.intensity_spinner.text)
+        # Collect user-chosen substitutions (pairs: out, in)
+        user_subs: list[dict] = []
+        for i in range(0, len(self.sub_spinners), 2):
+            out_name = self.sub_spinners[i].text
+            in_name = self.sub_spinners[i + 1].text
+            if out_name != "—" and in_name != "—":
+                user_subs.append({"quarter": 3, "out": out_name, "in": in_name})
+        match = self.app.play_next_match(
+            self.formation_spinner.text,
+            self.intensity_spinner.text,
+            user_subs=user_subs or None,
+        )
         if not match:
             return
         c = (0.2, 0.78, 0.35, 1) if match.home_score > match.away_score else (
@@ -492,3 +534,78 @@ class CarrieraScreen(Screen):
         else:
             self.feedback.text = "Devi prima completare tutte le partite."
 
+
+# ── Youth Academy ──────────────────────────────────────────────
+
+class YouthAcademyScreen(Screen):
+    """Youth academy screen: view prospects and promote them to the first team."""
+
+    def __init__(self, app, **kwargs):
+        super().__init__(**kwargs)
+        self.app = app
+        make_screen_bg(self)
+        self.layout = BoxLayout(orientation="vertical", padding=16, spacing=8)
+        self.layout.add_widget(section_title("🌱 Youth Academy"))
+
+        self.info_label = Label(
+            text="", font_size="14sp", color=TEXT_COLOR,
+            size_hint_y=None, height=36,
+        )
+        self.layout.add_widget(self.info_label)
+
+        self.scroll = ScrollView(size_hint_y=0.60)
+        self.list_layout = BoxLayout(orientation="vertical", size_hint_y=None, spacing=6)
+        self.list_layout.bind(minimum_height=self.list_layout.setter("height"))
+        self.scroll.add_widget(self.list_layout)
+        self.layout.add_widget(self.scroll)
+
+        self.layout.add_widget(styled_button(
+            "🔄 Genera nuovi talenti", self._generate_prospects,
+            bg_color=(0.20, 0.55, 0.32, 1),
+        ))
+        self.layout.add_widget(styled_button(
+            "⬅️ Indietro", lambda _: setattr(app.sm, 'current', 'menu')))
+        self.add_widget(self.layout)
+
+    def on_enter(self):
+        self._refresh()
+
+    def _refresh(self, *_):
+        self.list_layout.clear_widgets()
+        team = self.app.user_team
+        if not team:
+            return
+        if not team.youth_players:
+            self.info_label.text = "Nessun giovane talento nell'accademia. Genera nuovi talenti!"
+            return
+        self.info_label.text = f"{len(team.youth_players)} giovani talenti nell'accademia:"
+        for p in team.youth_players:
+            card = PlayerCard(p)
+            # Add promote button below each card
+            promote_btn = Button(
+                text=f"⬆️ Promuovi {p.name}",
+                font_size="14sp", size_hint_y=None, height=44,
+                background_color=(0.20, 0.55, 0.32, 1), color=TEXT_COLOR,
+            )
+            promote_btn.bind(on_press=lambda _, pl=p: self._promote(pl))
+            self.list_layout.add_widget(card)
+            self.list_layout.add_widget(promote_btn)
+
+    def _generate_prospects(self, _):
+        team = self.app.user_team
+        if not team:
+            return
+        new_prospects = generate_youth_prospects(team)
+        team.youth_players.extend(new_prospects)
+        self._refresh()
+
+    def _promote(self, prospect):
+        team = self.app.user_team
+        if not team:
+            return
+        ok = promote_youth_player(team, prospect)
+        if ok:
+            self.info_label.text = f"✅ {prospect.name} promosso in prima squadra!"
+        else:
+            self.info_label.text = f"❌ Impossibile promuovere {prospect.name}."
+        self._refresh()

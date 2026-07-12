@@ -30,7 +30,7 @@ from src.simulation import simulate_match
 from mobile.screens import (
     MenuScreen, RosaScreen, CalendarioScreen, ClassificaScreen,
     PartitaScreen, StatisticheScreen, AllenamentiScreen, MercatoScreen,
-    CarrieraScreen,
+    CarrieraScreen, YouthAcademyScreen,
 )
 
 Window.clearcolor = (0.102, 0.102, 0.180, 1)  # #1a1a2e
@@ -63,6 +63,7 @@ class FieldHockeyManagerApp(App):
         self.supporters: int = 1200
         self.season_objective: str = "Qualificazione playoff"
         self.career_news: list[str] = ["Benvenuto nella tua nuova carriera da manager."]
+        self._played_matches_history: list[Match] = []
 
     def build(self):
         """Show a real Kivy window immediately, then initialize the career."""
@@ -93,6 +94,7 @@ class FieldHockeyManagerApp(App):
             self.sm.add_widget(StatisticheScreen(self, name="statistiche"))
             self.sm.add_widget(AllenamentiScreen(self, name="allenamenti"))
             self.sm.add_widget(MercatoScreen(self, name="mercato"))
+            self.sm.add_widget(YouthAcademyScreen(self, name="youth"))
             self.sm.add_widget(CarrieraScreen(self, name="carriera"))
             self.root_container.clear_widgets()
             self.root_container.add_widget(self.sm)
@@ -178,6 +180,7 @@ class FieldHockeyManagerApp(App):
             "career_news", ["Benvenuto nella tua nuova carriera da manager."]
         )
         self.free_agents = generate_free_agents(8)
+        self._played_matches_history = []
 
     def get_next_match(self) -> dict | None:
         for entry in self.calendar:
@@ -193,7 +196,7 @@ class FieldHockeyManagerApp(App):
             return f"Prossima: {home.name} vs {away.name}"
         return "Stagione completata! 🎉"
 
-    def play_next_match(self, formation: str, intensity: str) -> Match | None:
+    def play_next_match(self, formation: str, intensity: str, user_subs: list[dict] | None = None) -> Match | None:
         entry = self.get_next_match()
         if not entry:
             return None
@@ -205,13 +208,15 @@ class FieldHockeyManagerApp(App):
             self.user_team.formation = formation
             self.user_team.intensity = intensity
 
-        # Determine formations/intensities
+        # Determine formations/intensities and pass user subs
         if entry["home"] == self.user_team_idx:
             match = simulate_match(home, away, seed=None,
-                                    home_formation=formation, home_intensity=intensity)
+                                    home_formation=formation, home_intensity=intensity,
+                                    home_subs=user_subs)
         else:
             match = simulate_match(home, away, seed=None,
-                                    away_formation=formation, away_intensity=intensity)
+                                    away_formation=formation, away_intensity=intensity,
+                                    away_subs=user_subs)
 
         self._apply_result(match, entry)
         self._update_career_after_match(match, entry)
@@ -221,6 +226,8 @@ class FieldHockeyManagerApp(App):
         return match
 
     def _apply_result(self, match: Match, entry: dict):
+        # Track match for playoff/cup isolation (M2)
+        self._played_matches_history.append(match)
         home = match.home_team
         away = match.away_team
         home.goals_for += match.home_score
@@ -290,6 +297,36 @@ class FieldHockeyManagerApp(App):
         """Advance the career after the current championship is complete."""
         if self.get_next_match() is not None:
             return False
+
+        # --- Playoff scudetto (top 4 teams) ---
+        from src.season import Standings, generate_playoff_bracket, simulate_playoff
+        standings = Standings()
+        for m in self._played_matches_history:
+            standings.update(m)
+        try:
+            bracket = generate_playoff_bracket(self.teams, standings)
+            playoff_winner = simulate_playoff(bracket, seed=self.season_number * 100)
+            self.career_news.insert(0, f"🏆 Playoff: {playoff_winner.name} vince lo scudetto!")
+            if playoff_winner == self.user_team:
+                self.manager_reputation = min(100, self.manager_reputation + 5)
+                self.board_confidence = min(100, self.board_confidence + 10)
+                self.supporters += 200
+        except Exception:
+            pass  # Not enough teams for playoff
+
+        # --- Coppa Nazionale ---
+        from src.season import generate_cup_bracket, simulate_cup
+        try:
+            cup_bracket = generate_cup_bracket(self.teams)
+            cup_winner = simulate_cup(cup_bracket, seed=self.season_number * 200)
+            if cup_winner:
+                self.career_news.insert(0, f"️ Coppa Nazionale: {cup_winner.name} vince!")
+                if cup_winner == self.user_team:
+                    self.manager_reputation = min(100, self.manager_reputation + 3)
+                    self.supporters += 100
+        except Exception:
+            pass  # Not enough teams for cup
+
         prize = max(100, 700 - self.get_standings().index(self.user_team) * 80)
         for team in self.teams:
             team.points = team.goals_for = team.goals_against = 0
@@ -306,6 +343,7 @@ class FieldHockeyManagerApp(App):
         self.trainings_used = 0
         self.calendar = generate_calendar(self.teams, self.user_team_idx)
         self.free_agents = generate_free_agents(8)
+        self._played_matches_history = []
         self.season_objective = (
             "Vincere il campionato" if self.manager_reputation >= 75
             else "Qualificazione playoff"

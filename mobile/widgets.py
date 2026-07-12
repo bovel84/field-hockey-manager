@@ -137,23 +137,35 @@ class PlayerCard(BoxLayout):
 
         # Mid row: OVR bar + age + morale
         mid = BoxLayout(orientation="horizontal", size_hint_y=0.30, spacing=4)
-        ovr_bar = RatingBar("OVR", ovr, size_hint_x=0.55)
+        ovr_bar = RatingBar("OVR", ovr, size_hint_x=0.45)
         age_lbl = Label(
             text=f"Età {player.age}",
             font_size="13sp",
             color=(0.7, 0.7, 0.8, 1),
             size_hint_x=0.20,
         )
-        mor_color = (0.2, 0.78, 0.35, 1) if player.morale > 60 else ((0.95, 0.55, 0.2, 1) if player.morale > 30 else (0.86, 0.2, 0.2, 1))
-        mor_lbl = Label(
-            text=f"Mor {player.morale}",
-            font_size="13sp",
-            color=mor_color,
-            size_hint_x=0.25,
-        )
-        mid.add_widget(ovr_bar)
-        mid.add_widget(age_lbl)
-        mid.add_widget(mor_lbl)
+        # Show potential for young players (under 23)
+        if player.show_potential():
+            pot_lbl = Label(
+                text=f"POT {player.potential}",
+                font_size="13sp",
+                color=(0.6, 0.85, 0.95, 1),
+                size_hint_x=0.20,
+            )
+            mid.add_widget(ovr_bar)
+            mid.add_widget(age_lbl)
+            mid.add_widget(pot_lbl)
+        else:
+            mor_color = (0.2, 0.78, 0.35, 1) if player.morale > 60 else ((0.95, 0.55, 0.2, 1) if player.morale > 30 else (0.86, 0.2, 0.2, 1))
+            mor_lbl = Label(
+                text=f"Mor {player.morale}",
+                font_size="13sp",
+                color=mor_color,
+                size_hint_x=0.35,
+            )
+            mid.add_widget(ovr_bar)
+            mid.add_widget(age_lbl)
+            mid.add_widget(mor_lbl)
 
         # Bottom row: goals + appearances
         bot = BoxLayout(orientation="horizontal", size_hint_y=0.25, spacing=4)

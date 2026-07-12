@@ -81,6 +81,11 @@ def simulate_match(
     # Clamp to max 3 subs per team
     home_sub_events = home_sub_events[:3]
     away_sub_events = away_sub_events[:3]
+    # Auto-subs: if no manual subs provided, generate automatic ones (m2)
+    if not home_sub_events:
+        home_sub_events = generate_auto_subs(home, home.get_starters())
+    if not away_sub_events:
+        away_sub_events = generate_auto_subs(away, away.get_starters())
 
     match = Match(home_team=home, away_team=away)
     match.events = []
@@ -291,3 +296,39 @@ def _make_substitution(team: Team, sub: dict, active_list: list[Player], side: s
         "out": out_name,
         "in": in_name,
     }
+
+
+def generate_auto_subs(team: Team, active_players: list[Player] | None = None) -> list[dict]:
+    """Generate up to 3 automatic substitutions for a team.
+
+    Picks the 3 bench players with the highest overall rating and replaces
+    the 3 active starters with the lowest stamina. If the user does not
+    choose substitutions manually, this function provides sensible defaults.
+
+    Args:
+        team: The team making substitutions.
+        active_players: Currently active starters (defaults to team.get_starters()).
+    Returns:
+        List of substitution dicts: [{"quarter": 3, "out": name, "in": name}, ...]
+    """
+    if active_players is None:
+        active_players = list(team.get_starters())
+
+    active_ids = {id(p) for p in active_players}
+    bench = [p for p in team.players if id(p) not in active_ids and p.can_play()]
+    if not bench or not active_players:
+        return []
+
+    # Sort bench by overall rating (descending)
+    bench.sort(key=lambda p: p.overall_rating(), reverse=True)
+    # Sort active by stamina (ascending — most tired first)
+    active_sorted = sorted(active_players, key=lambda p: p.stamina)
+
+    subs: list[dict] = []
+    for i in range(min(3, len(bench), len(active_sorted))):
+        subs.append({
+            "quarter": 3,
+            "out": active_sorted[i].name,
+            "in": bench[i].name,
+        })
+    return subs
