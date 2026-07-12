@@ -165,7 +165,15 @@ class MenuScreen(Screen):
             size_hint_y=None, height=192 if compact else 92,
         )
         kpis.add_widget(self._card("Classifica", f"{position}°", "posizione attuale"))
-        kpis.add_widget(self._card("Budget", f"{budget:,}", "fondi disponibili"))
+        payroll = team.payroll_per_round() if team else 0
+        expiring = sum(
+            1 for player in (team.players if team else [])
+            if player.contract_years <= 1
+        )
+        kpis.add_widget(self._card(
+            "Budget", f"{budget:,}",
+            f"Stipendi turno {payroll} · {expiring} in scadenza",
+        ))
         kpis.add_widget(self._card("Fiducia", f"{app.board_confidence}%", "dirigenza"))
         kpis.add_widget(self._card("Reputazione", f"{app.manager_reputation}%", "manager"))
         self.content.add_widget(kpis)
