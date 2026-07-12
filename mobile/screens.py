@@ -814,51 +814,178 @@ class AllenamentiScreen(Screen):
 # ── Mercato ─────────────────────────────────────────────────────
 
 class MercatoScreen(Screen):
+    """Transfer hub with negotiations, wages and outgoing offers."""
+
     def __init__(self, app, **kwargs):
         super().__init__(**kwargs)
         self.app = app
+        self.selected_target = None
         make_screen_bg(self)
-        self.layout = BoxLayout(orientation="vertical", padding=16, spacing=8)
-        self.layout.add_widget(section_title("💰 Mercato"))
+        self.layout = BoxLayout(orientation="vertical", padding=14, spacing=7)
+        self.layout.add_widget(section_title("💰 Centro trasferimenti"))
 
-        self.budget_label = Label(text="", font_size="16sp", color=(0.95, 0.83, 0.2, 1), size_hint_y=None, height=36)
+        self.budget_label = Label(
+            text="", font_size="15sp", color=(0.95, 0.83, 0.2, 1),
+            size_hint_y=None, height=34,
+        )
         self.layout.add_widget(self.budget_label)
 
-        self.scroll = ScrollView(size_hint_y=0.70)
-        self.list_layout = BoxLayout(orientation="vertical", size_hint_y=None, spacing=6)
+        self.scroll = ScrollView(size_hint_y=0.38)
+        self.list_layout = BoxLayout(
+            orientation="vertical", size_hint_y=None, spacing=5,
+        )
         self.list_layout.bind(minimum_height=self.list_layout.setter("height"))
         self.scroll.add_widget(self.list_layout)
         self.layout.add_widget(self.scroll)
 
-        self.layout.add_widget(styled_button("🔄 Aggiorna", lambda _: self._refresh()))
-        self.layout.add_widget(styled_button("⬅️ Indietro", lambda _: setattr(app.sm, 'current', 'menu')))
+        self.target_label = Label(
+            text="Seleziona un obiettivo", font_size="13sp", color=TEXT_COLOR,
+            size_hint_y=None, height=42,
+        )
+        self.layout.add_widget(self.target_label)
+
+        offer_row = BoxLayout(
+            orientation="horizontal", size_hint_y=None, height=44, spacing=5,
+        )
+        self.fee_spinner = Spinner(text="Cartellino", values=[])
+        self.wage_spinner = Spinner(
+            text="Stipendio", values=[str(value) for value in range(1, 16)],
+        )
+        self.years_spinner = Spinner(
+            text="3 anni", values=[f"{value} anni" for value in range(1, 6)],
+        )
+        self.role_spinner = Spinner(
+            text="Rotazione",
+            values=["Chiave", "Titolare", "Rotazione", "Prospetto"],
+        )
+        for widget in (
+            self.fee_spinner, self.wage_spinner,
+            self.years_spinner, self.role_spinner,
+        ):
+            offer_row.add_widget(widget)
+        self.layout.add_widget(offer_row)
+        self.layout.add_widget(styled_button(
+            "Invia offerta", self._submit_offer,
+            bg_color=(0.08, 0.55, 0.34, 1), height=46,
+        ))
+
+        sale_row = BoxLayout(
+            orientation="horizontal", size_hint_y=None, height=46, spacing=6,
+        )
+        self.sale_spinner = Spinner(text="Scegli giocatore da cedere", values=[])
+        sale_row.add_widget(self.sale_spinner)
+        sale_row.add_widget(styled_button(
+            "Accetta offerta", self._sell_selected,
+            bg_color=(0.55, 0.30, 0.12, 1), height=44,
+        ))
+        self.layout.add_widget(sale_row)
+
+        self.feedback = Label(
+            text="", font_size="13sp", color=TEXT_COLOR,
+            size_hint_y=None, height=46,
+        )
+        self.layout.add_widget(self.feedback)
+        self.layout.add_widget(styled_button(
+            "⬅️ Indietro", lambda _btn: setattr(app.sm, "current", "menu"),
+            height=46,
+        ))
         self.add_widget(self.layout)
 
     def on_enter(self):
         self._refresh()
 
-    def _refresh(self, *_):
+    def _refresh(self, *_args):
         self.list_layout.clear_widgets()
         team = self.app.user_team
         if not team:
             return
-        self.budget_label.text = f"💰 Budget: {team.budget} crediti"
-        for p in self.app.free_agents:
-            price = self.app.get_player_price(p)
-            can_afford = team.budget >= price
-            btn = Button(
-                text=f"{p.name} [{p.position.value}] OVR:{p.overall_rating()} - {price} crediti",
-                font_size="14sp", size_hint_y=None, height=50,
-                background_color=(0.2, 0.5, 0.2, 1) if can_afford else (0.3, 0.3, 0.3, 1),
-                color=TEXT_COLOR, disabled=not can_afford,
+        self.budget_label.text = (
+            f"Budget {team.budget}  •  Rosa {len(team.players)}/24  •  "
+            f"Stipendi {team.payroll_per_round()}/turno"
+        )
+        self.sale_spinner.values = [player.name for player in team.players]
+        if self.sale_spinner.text not in self.sale_spinner.values:
+            self.sale_spinner.text = (
+                self.sale_spinner.values[0]
+                if self.sale_spinner.values else "Nessun giocatore"
             )
-            btn.bind(on_press=lambda _, pl=p: self._buy(pl))
-            self.list_layout.add_widget(btn)
 
-    def _buy(self, player):
-        ok = self.app.buy_player(player)
+        for player in self.app.free_agents:
+            asking = self.app.get_player_price(player)
+            button = Button(
+                text=(
+                    f"{player.name}  |  {player.position.value}  |  "
+                    f"OVR {player.overall_rating()}  |  Valore {asking}  |  "
+                    f"Ingaggio {player.wage}"
+                ),
+                font_size="13sp", size_hint_y=None, height=48,
+                background_color=(0.16, 0.28, 0.38, 1),
+                color=TEXT_COLOR,
+            )
+            button.bind(on_press=lambda _btn, target=player: self._select_target(target))
+            self.list_layout.add_widget(button)
+
+    def _select_target(self, player):
+        self.selected_target = player
+        asking = self.app.get_player_price(player)
+        fees = sorted({
+            max(10, int(asking * factor))
+            for factor in (0.80, 0.90, 1.00, 1.10)
+        })
+        self.fee_spinner.values = [str(value) for value in fees]
+        self.fee_spinner.text = str(asking)
+        self.wage_spinner.text = str(max(1, min(15, player.wage)))
+        self.target_label.text = (
+            f"{player.name}: valore {asking}, contratto attuale "
+            f"{player.contract_years} anni, felicità {player.happiness}"
+        )
+        self.feedback.text = ""
+
+    def _submit_offer(self, _btn):
+        player = self.selected_target
+        if not player or not self.fee_spinner.text.isdigit():
+            self.feedback.text = "Seleziona prima un giocatore dalla lista."
+            return
+        years = int(self.years_spinner.text.split()[0])
+        ok, message = self.app.negotiate_transfer(
+            player=player,
+            fee=int(self.fee_spinner.text),
+            wage=int(self.wage_spinner.text),
+            years=years,
+            squad_role=self.role_spinner.text,
+        )
+        self.feedback.text = ("✅ " if ok else "❌ ") + message
+        self.feedback.color = (
+            (0.2, 0.78, 0.35, 1) if ok else (0.86, 0.2, 0.2, 1)
+        )
         if ok:
+            self.selected_target = None
+            self.target_label.text = "Trattativa conclusa"
             self._refresh()
+
+    def _sell_selected(self, _btn):
+        team = self.app.user_team
+        if not team:
+            return
+        player = next(
+            (item for item in team.players if item.name == self.sale_spinner.text),
+            None,
+        )
+        if not player:
+            self.feedback.text = "Nessun giocatore selezionato."
+            return
+        preview = self.app.get_incoming_offer(player)
+        interest = 70 + max(-10, min(20, (player.form - 50) // 2))
+        ok, message, fee = self.app.sell_player(player, interest=interest)
+        self.feedback.text = (
+            f"✅ {player.name} ceduto per {fee}."
+            if ok else f"❌ {message} (offerta prevista {preview})"
+        )
+        self.feedback.color = (
+            (0.2, 0.78, 0.35, 1) if ok else (0.86, 0.2, 0.2, 1)
+        )
+        self._refresh()
+
 
 # ── Centro Carriera ─────────────────────────────────────────────
 
