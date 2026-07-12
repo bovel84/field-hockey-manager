@@ -83,7 +83,7 @@ class Player:
     condition: int = 100  # Physical readiness, 0-100
     form: int = 50  # Recent performance, 0-100
     matches_since_rest: int = 0
-    wage: int = 5  # Wage units paid each league round
+    wage: int = 2  # Wage units paid each league round
     contract_years: int = 3
     squad_role: str = "Rotazione"  # Chiave, Titolare, Rotazione, Prospetto
     happiness: int = 60
