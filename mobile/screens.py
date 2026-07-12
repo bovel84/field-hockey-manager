@@ -910,11 +910,12 @@ class MercatoScreen(Screen):
                 if self.sale_spinner.values else "Nessun giocatore"
             )
 
-        for player in self.app.free_agents:
+        for player in self.app.get_transfer_targets():
             asking = self.app.get_player_price(player)
+            club = self.app.get_player_club(player)
             button = Button(
                 text=(
-                    f"{player.name}  |  {player.position.value}  |  "
+                    f"{player.name}  |  {club}  |  {player.position.value}  |  "
                     f"OVR {player.overall_rating()}  |  Valore {asking}  |  "
                     f"Ingaggio {player.wage}"
                 ),
