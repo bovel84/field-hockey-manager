@@ -5,11 +5,13 @@ import sys
 
 from kivy.uix.screenmanager import Screen
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.spinner import Spinner
 from kivy.graphics import Color, RoundedRectangle
+from kivy.core.window import Window
 
 _root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _root not in sys.path:
@@ -67,40 +69,145 @@ def section_title(text):
 # ── Menu ────────────────────────────────────────────────────────
 
 class MenuScreen(Screen):
+    """Adaptive career dashboard for desktop and mobile layouts."""
+
     def __init__(self, app, **kwargs):
         super().__init__(**kwargs)
         self.app = app
         make_screen_bg(self)
-        layout = BoxLayout(orientation="vertical", padding=20, spacing=8)
 
-        layout.add_widget(BannerLabel(
-            text="🏒 Field Hockey Manager", font_size="26sp", bold=True,
-            color=ACCENT_COLOR, size_hint_y=None, height=60,
+        self.scroll = ScrollView(do_scroll_x=False)
+        self.content = BoxLayout(
+            orientation="vertical", padding=18, spacing=12,
+            size_hint_y=None,
+        )
+        self.content.bind(minimum_height=self.content.setter("height"))
+        self.scroll.add_widget(self.content)
+        self.add_widget(self.scroll)
+        Window.bind(size=self._on_window_size)
+
+    def _card(self, title, value, subtitle="", accent=None):
+        card = BoxLayout(
+            orientation="vertical", padding=12, spacing=2,
+            size_hint_y=None, height=92,
+        )
+        with card.canvas.before:
+            Color(*(accent or CARD_COLOR))
+            card._bg = RoundedRectangle(pos=card.pos, size=card.size, radius=[10])
+        card.bind(
+            pos=lambda inst, _v: setattr(inst._bg, "pos", inst.pos),
+            size=lambda inst, _v: setattr(inst._bg, "size", inst.size),
+        )
+        card.add_widget(Label(
+            text=title.upper(), font_size="11sp", bold=True,
+            color=(0.60, 0.68, 0.78, 1), halign="left",
+            text_size=(None, None),
         ))
-
-        team_name = app.user_team.name if app.user_team else "-"
-        layout.add_widget(Label(
-            text=f"Squadra: {team_name}", font_size="16sp", color=TEXT_COLOR,
-            size_hint_y=None, height=36,
+        card.add_widget(Label(
+            text=str(value), font_size="22sp", bold=True,
+            color=TEXT_COLOR, halign="left",
         ))
-        layout.add_widget(Label(
-            text=app.next_match_info(), font_size="14sp",
-            color=(0.6, 0.7, 0.9, 1), size_hint_y=None, height=30,
+        if subtitle:
+            card.add_widget(Label(
+                text=subtitle, font_size="11sp",
+                color=(0.68, 0.74, 0.82, 1), halign="left",
+            ))
+        return card
+
+    def _action(self, text, screen, primary=False):
+        color = ACCENT_COLOR if primary else (0.16, 0.21, 0.31, 1)
+        return styled_button(
+            text, lambda _btn, target=screen: setattr(self.app.sm, "current", target),
+            bg_color=color, height=54,
+        )
+
+    def _on_window_size(self, *_args):
+        if self.manager:
+            self.refresh()
+
+    def on_enter(self):
+        self.refresh()
+
+    def refresh(self):
+        self.content.clear_widgets()
+        app = self.app
+        team = app.user_team
+        team_name = team.name if team else "Nessuna squadra"
+        budget = getattr(team, "budget", 0) if team else 0
+        standings = app.get_standings() if team else []
+        position = standings.index(team) + 1 if team in standings else "-"
+        compact = Window.width < 760
+
+        header = BoxLayout(
+            orientation="vertical" if compact else "horizontal",
+            size_hint_y=None, height=118 if compact else 82, spacing=8,
+        )
+        identity = BoxLayout(orientation="vertical")
+        identity.add_widget(Label(
+            text="[b]FIELD HOCKEY MANAGER[/b]", markup=True,
+            font_size="25sp", color=ACCENT_COLOR,
+            halign="left", valign="middle",
         ))
+        identity.add_widget(Label(
+            text=f"{team_name}  •  Stagione {app.season_number}",
+            font_size="14sp", color=TEXT_COLOR, halign="left",
+        ))
+        header.add_widget(identity)
+        header.add_widget(styled_button(
+            "🏒 GIOCA PROSSIMA PARTITA",
+            lambda _btn: setattr(app.sm, "current", "partita"),
+            bg_color=(0.08, 0.55, 0.34, 1), height=56,
+        ))
+        self.content.add_widget(header)
 
-        layout.add_widget(styled_button("💼 Centro Carriera", lambda _: setattr(app.sm, 'current', 'carriera')))
-        layout.add_widget(styled_button("🥅 Rosa", lambda _: setattr(app.sm, 'current', 'rosa')))
-        layout.add_widget(styled_button("📅 Calendario", lambda _: setattr(app.sm, 'current', 'calendario')))
-        layout.add_widget(styled_button("🏆 Classifica", lambda _: setattr(app.sm, 'current', 'classifica')))
-        layout.add_widget(styled_button("⚽ Gioca Partita", lambda _: setattr(app.sm, 'current', 'partita')))
-        layout.add_widget(styled_button("📊 Statistiche", lambda _: setattr(app.sm, 'current', 'statistiche')))
-        layout.add_widget(styled_button("🏋️ Allenamenti", lambda _: setattr(app.sm, 'current', 'allenamenti')))
-        layout.add_widget(styled_button("💰 Mercato", lambda _: setattr(app.sm, 'current', 'mercato')))
-        layout.add_widget(styled_button("🌱 Youth Academy", lambda _: setattr(app.sm, 'current', 'youth')))
-        layout.add_widget(styled_button("💾 Salva / Carica", lambda _: setattr(app.sm, 'current', 'saveload')))
-        layout.add_widget(styled_button("🚪 Esci", lambda _: app.stop(), bg_color=(0.5, 0.2, 0.2, 1)))
+        kpis = GridLayout(
+            cols=2 if compact else 4, spacing=8,
+            size_hint_y=None, height=192 if compact else 92,
+        )
+        kpis.add_widget(self._card("Classifica", f"{position}°", "posizione attuale"))
+        kpis.add_widget(self._card("Budget", f"{budget:,}", "fondi disponibili"))
+        kpis.add_widget(self._card("Fiducia", f"{app.board_confidence}%", "dirigenza"))
+        kpis.add_widget(self._card("Reputazione", f"{app.manager_reputation}%", "manager"))
+        self.content.add_widget(kpis)
 
-        self.add_widget(layout)
+        overview = GridLayout(
+            cols=1 if compact else 2, spacing=10,
+            size_hint_y=None, height=300 if compact else 176,
+        )
+        overview.add_widget(self._card(
+            "Prossima partita", app.next_match_info(),
+            f"Turno {app.current_round + 1}",
+            accent=(0.12, 0.22, 0.34, 1),
+        ))
+        latest_news = app.career_news[0] if app.career_news else "Nessuna notizia"
+        overview.add_widget(self._card(
+            "Notizie dal club", latest_news,
+            f"{app.supporters:,} sostenitori",
+            accent=(0.23, 0.17, 0.12, 1),
+        ))
+        self.content.add_widget(overview)
+
+        self.content.add_widget(section_title("Centro manageriale"))
+        actions = GridLayout(
+            cols=2 if compact else 4, spacing=8,
+            size_hint_y=None, height=248 if compact else 118,
+        )
+        for label, target in [
+            ("💼 Carriera", "carriera"), ("🥅 Rosa", "rosa"),
+            ("📋 Tattiche e partita", "partita"), ("🏋 Allenamenti", "allenamenti"),
+            ("📅 Calendario", "calendario"), ("🏆 Classifica", "classifica"),
+            ("📊 Statistiche", "statistiche"), ("💰 Mercato", "mercato"),
+            ("🌱 Vivaio", "youth"), ("💾 Salva / Carica", "saveload"),
+        ]:
+            actions.add_widget(self._action(label, target))
+        self.content.add_widget(actions)
+
+        exit_row = BoxLayout(size_hint_y=None, height=48)
+        exit_row.add_widget(styled_button(
+            "Esci dal gioco", lambda _btn: app.stop(),
+            bg_color=(0.42, 0.16, 0.18, 1), height=44,
+        ))
+        self.content.add_widget(exit_row)
 
 
 # ── Save / Load ───────────────────────────────────────────────

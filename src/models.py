@@ -79,6 +79,9 @@ class Player:
     injured: bool = False
     injury_duration: int = 0  # matches remaining
     potential: int = 99  # Maximum reachable rating (for growth system)
+    condition: int = 100  # Physical readiness, 0-100
+    form: int = 50  # Recent performance, 0-100
+    matches_since_rest: int = 0
 
     def overall_rating(self) -> int:
         """Calculate overall rating using position-specific weights."""
@@ -93,15 +96,38 @@ class Player:
         return int(round(raw))
 
     def effective_rating(self) -> int:
-        """Rating adjusted by morale and injury status."""
+        """Return match-day rating adjusted by morale, form and condition."""
         base = self.overall_rating()
         if self.injured:
             return 0
-        if self.morale < 30:
-            return int(round(base * 0.90))
-        elif self.morale > 80:
-            return int(round(base * 1.05))
-        return base
+        morale_factor = 0.90 if self.morale < 30 else (1.05 if self.morale > 80 else 1.0)
+        # Form changes performance by at most ±8%; condition can cost up to 25%.
+        form_factor = 1.0 + ((self.form - 50) / 50.0) * 0.08
+        condition_factor = 0.75 + (max(0, min(100, self.condition)) / 100.0) * 0.25
+        return max(1, int(round(base * morale_factor * form_factor * condition_factor)))
+
+    def apply_match_load(self, intensity: str = "Bilanciata", played: bool = True) -> None:
+        """Apply fatigue after a match or recovery when the player is rested."""
+        if played:
+            fatigue = {"Difensiva": 12, "Bilanciata": 16, "Offensiva": 21}.get(intensity, 16)
+            fatigue += max(0, 65 - self.stamina) // 10
+            self.condition = max(20, self.condition - fatigue)
+            self.matches_since_rest += 1
+        else:
+            self.condition = min(100, self.condition + 18)
+            self.matches_since_rest = 0
+
+    def recover_between_matches(self) -> None:
+        """Recover condition between fixtures; high stamina improves recovery."""
+        recovery = 8 + max(0, self.stamina - 50) // 10
+        self.condition = min(100, self.condition + recovery)
+
+    def update_form(self, won: bool, drew: bool = False, scored: bool = False) -> None:
+        """Update recent form with bounded, gradual changes."""
+        delta = 3 if won else (1 if drew else -3)
+        if scored:
+            delta += 2
+        self.form = max(0, min(100, self.form + delta))
 
     def can_play(self) -> bool:
         """Return True if the player is available (not injured)."""
@@ -124,8 +150,12 @@ class Player:
         return self.age < 23
 
     def __str__(self) -> str:
-        inj = " 🔴" if self.injured else ""
-        return f"{self.name} [{self.position.value}] OVR:{self.overall_rating()} G:{self.goals} A:{self.appearances} Età:{self.age} Mor:{self.morale}{inj}"
+        inj = f" 🔴{self.injury_duration}" if self.injured else ""
+        return (
+            f"{self.name} [{self.position.value}] OVR:{self.overall_rating()} "
+            f"FORMA:{self.form} COND:{self.condition} G:{self.goals} "
+            f"A:{self.appearances} Età:{self.age} Mor:{self.morale}{inj}"
+        )
 
 
 @dataclass

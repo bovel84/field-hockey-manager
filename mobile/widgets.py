@@ -99,7 +99,7 @@ class PlayerCard(BoxLayout):
         super().__init__(**kwargs)
         self.orientation = "vertical"
         self.size_hint_y = None
-        self.height = 120
+        self.height = 132
         self.spacing = 4
         self.padding = [8, 6]
 
@@ -188,11 +188,16 @@ class PlayerCard(BoxLayout):
             color=rating_to_color(eff),
             size_hint_x=0.25,
         )
+        readiness = min(player.condition, player.form)
+        status_text = (
+            f"🏥 {player.injury_duration} gare" if player.injured
+            else f"Cond {player.condition}  Forma {player.form}"
+        )
         status_lbl = Label(
-            text="🔴" if player.injured else "✅",
-            font_size="13sp",
-            color=(0.86, 0.2, 0.2, 1) if player.injured else (0.2, 0.78, 0.35, 1),
-            size_hint_x=0.25,
+            text=status_text,
+            font_size="12sp",
+            color=(0.86, 0.2, 0.2, 1) if player.injured else rating_to_color(readiness),
+            size_hint_x=0.38,
         )
         bot.add_widget(gol_lbl)
         bot.add_widget(pres_lbl)
