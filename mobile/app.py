@@ -30,7 +30,7 @@ from src.simulation import simulate_match
 from mobile.screens import (
     MenuScreen, RosaScreen, CalendarioScreen, ClassificaScreen,
     PartitaScreen, StatisticheScreen, AllenamentiScreen, MercatoScreen,
-    CarrieraScreen, YouthAcademyScreen, SaveLoadScreen,
+    CarrieraScreen, YouthAcademyScreen, SaveLoadScreen, ContractsScreen,
 )
 
 Window.clearcolor = (0.102, 0.102, 0.180, 1)  # #1a1a2e
@@ -97,6 +97,7 @@ class FieldHockeyManagerApp(App):
             self.sm.add_widget(YouthAcademyScreen(self, name="youth"))
             self.sm.add_widget(CarrieraScreen(self, name="carriera"))
             self.sm.add_widget(SaveLoadScreen(self, name="saveload"))
+            self.sm.add_widget(ContractsScreen(self, name="contratti"))
             self.root_container.clear_widgets()
             self.root_container.add_widget(self.sm)
         except Exception:
@@ -167,6 +168,9 @@ class FieldHockeyManagerApp(App):
         if saved_teams and len(saved_teams) == len(self.teams):
             by_name = {team.name: team for team in saved_teams}
             self.teams = [by_name.get(team.name, team) for team in self.teams]
+
+        for team in self.teams:
+            team.initialize_squad_roles()
 
         self.user_team_idx = 0
         self.user_team = self.teams[0] if self.teams else None
@@ -292,13 +296,16 @@ class FieldHockeyManagerApp(App):
             starter_ids = {id(player) for player in starters}
             for player in team.players:
                 player.heal_one_match()
-                if id(player) in starter_ids:
+                started = id(player) in starter_ids
+                if started:
                     player.appearances += 1
                     player.apply_match_load(team.intensity, played=True)
                     player.update_form(won=won, drew=drew, scored=player.name in scorers)
                 else:
                     player.apply_match_load(played=False)
+                player.update_happiness_for_selection(started=started)
                 player.recover_between_matches()
+            team.budget = max(0, team.budget - team.payroll_per_round())
 
         for ev in match.events:
             if ev.get("type") in ("goal", "corner_goal", "penalty_goal"):
@@ -343,6 +350,11 @@ class FieldHockeyManagerApp(App):
             headline = f"Sconfitta contro {opponent.name}: aumenta la pressione."
             if is_derby:
                 headline = f"🔥 Derby perso contro {opponent.name}: tifosi furiosi!"
+        payroll = user_team.payroll_per_round() if user_team else 0
+        headline += f" Monte stipendi del turno: {payroll}."
+        if user_team and user_team.budget <= payroll * 2:
+            headline += " ⚠️ Budget sotto pressione."
+            self.board_confidence = max(0, self.board_confidence - 1)
         self.career_news.insert(0, headline)
         self.career_news = self.career_news[:6]
 
@@ -499,10 +511,22 @@ class FieldHockeyManagerApp(App):
             for player in team.players:
                 season_aging(player)
                 age_player_one_year(player)
+                player.contract_years = max(0, player.contract_years - 1)
+                if player.contract_years == 0:
+                    player.happiness = max(0, player.happiness - 10)
                 player.appearances = 0
                 player.goals = 0
         if self.user_team:
             self.user_team.budget += prize
+            expired = [
+                player.name for player in self.user_team.players
+                if player.contract_years == 0
+            ]
+            if expired:
+                self.career_news.insert(
+                    0,
+                    "⚠️ Contratti scaduti: " + ", ".join(expired[:4]),
+                )
         self.season_number += 1
         self.current_round = 0
         self.trainings_used = 0

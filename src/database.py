@@ -57,6 +57,10 @@ class Database:
                     condition          INTEGER DEFAULT 100,
                     form               INTEGER DEFAULT 50,
                     matches_since_rest INTEGER DEFAULT 0,
+                    wage               INTEGER DEFAULT 2,
+                    contract_years     INTEGER DEFAULT 3,
+                    squad_role         TEXT DEFAULT 'Rotazione',
+                    happiness          INTEGER DEFAULT 60,
                     is_youth          INTEGER DEFAULT 0,
                     FOREIGN KEY (team_name) REFERENCES teams(name)
                 );
@@ -110,6 +114,10 @@ class Database:
             "form": "ALTER TABLE players ADD COLUMN form INTEGER DEFAULT 50",
             "matches_since_rest": "ALTER TABLE players ADD COLUMN matches_since_rest INTEGER DEFAULT 0",
             "injury_type": "ALTER TABLE players ADD COLUMN injury_type TEXT DEFAULT ''",
+            "wage": "ALTER TABLE players ADD COLUMN wage INTEGER DEFAULT 2",
+            "contract_years": "ALTER TABLE players ADD COLUMN contract_years INTEGER DEFAULT 3",
+            "squad_role": "ALTER TABLE players ADD COLUMN squad_role TEXT DEFAULT 'Rotazione'",
+            "happiness": "ALTER TABLE players ADD COLUMN happiness INTEGER DEFAULT 60",
         }
         for col, sql in migrations.items():
             if col not in existing_cols:
@@ -246,12 +254,13 @@ class Database:
                     """INSERT INTO players
                        (team_name, name, position, passing, shooting, defense, speed, stamina,
                         goals, appearances, age, morale, injured, injury_duration, injury_type, potential,
-                        condition, form, matches_since_rest, is_youth)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        condition, form, matches_since_rest, wage, contract_years, squad_role, happiness, is_youth)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (team.name, p.name, p.position.value, p.passing, p.shooting,
                      p.defense, p.speed, p.stamina, p.goals, p.appearances,
                      p.age, p.morale, 1 if p.injured else 0, p.injury_duration,
-                     p.injury_type, p.potential, p.condition, p.form, p.matches_since_rest, 0),
+                     p.injury_type, p.potential, p.condition, p.form, p.matches_since_rest,
+                     p.wage, p.contract_years, p.squad_role, p.happiness, 0),
                 )
             # Save youth players with is_youth=1
             for p in team.youth_players:
@@ -259,12 +268,13 @@ class Database:
                     """INSERT INTO players
                        (team_name, name, position, passing, shooting, defense, speed, stamina,
                         goals, appearances, age, morale, injured, injury_duration, injury_type, potential,
-                        condition, form, matches_since_rest, is_youth)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        condition, form, matches_since_rest, wage, contract_years, squad_role, happiness, is_youth)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (team.name, p.name, p.position.value, p.passing, p.shooting,
                      p.defense, p.speed, p.stamina, p.goals, p.appearances,
                      p.age, p.morale, 1 if p.injured else 0, p.injury_duration,
-                     p.injury_type, p.potential, p.condition, p.form, p.matches_since_rest, 1),
+                     p.injury_type, p.potential, p.condition, p.form, p.matches_since_rest,
+                     p.wage, p.contract_years, p.squad_role, p.happiness, 1),
                 )
             conn.commit()
 
@@ -283,7 +293,7 @@ class Database:
             cursor.execute(
                 """SELECT name, position, passing, shooting, defense, speed, stamina,
                           goals, appearances, age, morale, injured, injury_duration, injury_type, potential,
-                          condition, form, matches_since_rest, is_youth
+                          condition, form, matches_since_rest, wage, contract_years, squad_role, happiness, is_youth
                    FROM players WHERE team_name = ?""",
                 (name,),
             )
@@ -310,8 +320,12 @@ class Database:
                 condition=prow[15],
                 form=prow[16],
                 matches_since_rest=prow[17],
+                wage=prow[18],
+                contract_years=prow[19],
+                squad_role=prow[20],
+                happiness=prow[21],
             )
-            if prow[18]:  # is_youth
+            if prow[22]:  # is_youth
                 youth_players.append(p)
             else:
                 players.append(p)

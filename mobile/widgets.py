@@ -99,7 +99,7 @@ class PlayerCard(BoxLayout):
         super().__init__(**kwargs)
         self.orientation = "vertical"
         self.size_hint_y = None
-        self.height = 132
+        self.height = 162
         self.spacing = 4
         self.padding = [8, 6]
 
@@ -205,9 +205,30 @@ class PlayerCard(BoxLayout):
         bot.add_widget(eff_lbl)
         bot.add_widget(status_lbl)
 
+        contract = BoxLayout(orientation="horizontal", size_hint_y=0.24, spacing=4)
+        happiness_color = rating_to_color(player.happiness)
+        contract.add_widget(Label(
+            text=f"Ruolo: {player.squad_role}",
+            font_size="12sp", color=(0.70, 0.80, 0.95, 1),
+        ))
+        contract.add_widget(Label(
+            text=f"Contratto: {player.contract_years} anni",
+            font_size="12sp",
+            color=(0.90, 0.45, 0.35, 1) if player.contract_years <= 1 else TEXT_COLOR,
+        ))
+        contract.add_widget(Label(
+            text=f"Stipendio: {player.wage}",
+            font_size="12sp", color=(0.45, 0.85, 0.55, 1),
+        ))
+        contract.add_widget(Label(
+            text=f"Felicità: {player.happiness}",
+            font_size="12sp", color=happiness_color,
+        ))
+
         self.add_widget(top)
         self.add_widget(mid)
         self.add_widget(bot)
+        self.add_widget(contract)
 
     def _update_rect(self, *_):
         self.canvas.before.clear()

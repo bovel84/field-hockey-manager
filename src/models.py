@@ -83,6 +83,10 @@ class Player:
     condition: int = 100  # Physical readiness, 0-100
     form: int = 50  # Recent performance, 0-100
     matches_since_rest: int = 0
+    wage: int = 2  # Wage units paid each league round
+    contract_years: int = 3
+    squad_role: str = "Rotazione"  # Chiave, Titolare, Rotazione, Prospetto
+    happiness: int = 60
 
     def overall_rating(self) -> int:
         """Calculate overall rating using position-specific weights."""
@@ -105,7 +109,10 @@ class Player:
         # Form changes performance by at most ±8%; condition can cost up to 25%.
         form_factor = 1.0 + ((self.form - 50) / 50.0) * 0.08
         condition_factor = 0.75 + (max(0, min(100, self.condition)) / 100.0) * 0.25
-        return max(1, int(round(base * morale_factor * form_factor * condition_factor)))
+        happiness_factor = 0.95 + (max(0, min(100, self.happiness)) / 100.0) * 0.10
+        return max(1, int(round(
+            base * morale_factor * form_factor * condition_factor * happiness_factor
+        )))
 
     def apply_match_load(self, intensity: str = "Bilanciata", played: bool = True) -> None:
         """Apply fatigue after a match or recovery when the player is rested."""
@@ -129,6 +136,32 @@ class Player:
         if scored:
             delta += 2
         self.form = max(0, min(100, self.form + delta))
+
+    def update_happiness_for_selection(self, started: bool) -> None:
+        """Update happiness according to playing time and promised squad role."""
+        expected_to_start = self.squad_role in ("Chiave", "Titolare")
+        if started:
+            delta = 2 if expected_to_start else 3
+        else:
+            delta = -5 if self.squad_role == "Chiave" else (
+                -3 if self.squad_role == "Titolare" else 1
+            )
+        self.happiness = max(0, min(100, self.happiness + delta))
+
+    def renew_contract(self, years: int, wage: int) -> bool:
+        """Renew a contract when the proposal is credible for the player's status."""
+        if years < 1 or years > 5 or wage < 1:
+            return False
+        minimum = max(1, self.overall_rating() // 12)
+        if self.squad_role == "Chiave":
+            minimum += 2
+        if wage < minimum:
+            self.happiness = max(0, self.happiness - 5)
+            return False
+        self.contract_years = years
+        self.wage = wage
+        self.happiness = min(100, self.happiness + 5)
+        return True
 
     def can_play(self) -> bool:
         """Return True if the player is available (not injured)."""
@@ -159,7 +192,8 @@ class Player:
         return (
             f"{self.name} [{self.position.value}] OVR:{self.overall_rating()} "
             f"FORMA:{self.form} COND:{self.condition} G:{self.goals} "
-            f"A:{self.appearances} Età:{self.age} Mor:{self.morale}{inj}"
+            f"A:{self.appearances} Età:{self.age} Mor:{self.morale} "
+            f"Fel:{self.happiness} Contr:{self.contract_years}a{inj}"
         )
 
 
@@ -181,6 +215,32 @@ class Team:
     prestige: int = 0  # Prestige from cup wins and playoff results
     youth_players: list[Player] = field(default_factory=list)  # Youth academy prospects
     rivals: list[str] = field(default_factory=list)  # Feature 2: rival teams for derby detection
+
+    def initialize_squad_roles(self, force: bool = False) -> None:
+        """Assign credible initial roles and wages from squad hierarchy."""
+        if not force and any(
+            player.squad_role != "Rotazione" or player.wage != 2
+            for player in self.players
+        ):
+            return
+        ranked = sorted(self.players, key=lambda player: player.overall_rating(), reverse=True)
+        for index, player in enumerate(ranked):
+            if player.age <= 21 and index >= 7:
+                player.squad_role = "Prospetto"
+                player.wage = max(1, player.overall_rating() // 35)
+            elif index < 3:
+                player.squad_role = "Chiave"
+                player.wage = max(4, player.overall_rating() // 20)
+            elif index < 11:
+                player.squad_role = "Titolare"
+                player.wage = max(3, player.overall_rating() // 24)
+            else:
+                player.squad_role = "Rotazione"
+                player.wage = max(2, player.overall_rating() // 30)
+
+    def payroll_per_round(self) -> int:
+        """Return the total wage bill charged after a league fixture."""
+        return sum(max(0, player.wage) for player in self.players)
 
     def team_rating(self) -> int:
         """Average rating of the 11 starters (using effective_rating)."""
