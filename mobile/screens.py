@@ -221,6 +221,7 @@ class MenuScreen(Screen):
             ("📅 Calendario", "calendario"), ("🏆 Classifica", "classifica"),
             ("📊 Statistiche", "statistiche"), ("💰 Mercato", "mercato"),
             ("🌱 Vivaio", "youth"), ("📑 Contratti", "contratti"),
+            ("💰 Finanze", "finanze"),
             ("💾 Salva / Carica", "saveload"),
         ]:
             actions.add_widget(self._action(label, target))
@@ -1347,3 +1348,125 @@ class YouthAcademyScreen(Screen):
         else:
             self.info_label.text = f"❌ Impossibile promuovere {prospect.name}."
         self._refresh()
+
+
+# ── Finance Screen ──────────────────────────────────────────────
+
+class FinanceScreen(Screen):
+    """Club finances: sponsors, stadium, facilities, balance."""
+
+    def __init__(self, app, **kwargs):
+        super().__init__(**kwargs)
+        self.app = app
+        layout = BoxLayout(orientation="vertical", padding=12, spacing=6)
+
+        layout.add_widget(Label(text="💰 Finanze Club", font_size="22sp", bold=True,
+                                color=ACCENT_COLOR, size_hint_y=None, height=40))
+
+        scroll = ScrollView(size_hint_y=0.85)
+        self.content = BoxLayout(orientation="vertical", spacing=6, size_hint_y=None)
+        self.content.bind(minimum_height=self.content.setter("height"))
+        scroll.add_widget(self.content)
+        layout.add_widget(scroll)
+
+        layout.add_widget(styled_button("⬅️ Indietro",
+            lambda _: setattr(app.sm, "current", "menu")))
+        self.add_widget(layout)
+
+    def on_enter(self):
+        self._refresh()
+
+    def _refresh(self):
+        self.content.clear_widgets()
+        team = self.app.user_team
+        if not team:
+            return
+
+        # Init finances if needed
+        if not team.sponsors and not team.stadium:
+            team.init_finances(team.prestige if hasattr(team, "prestige") else 0)
+
+        # Budget
+        self.content.add_widget(self._section("💵 Budget Attuale", f"{team.budget}"))
+
+        # Season balance
+        balance = team.season_balance() if hasattr(team, "season_balance") else 0
+        bal_color = (0.2, 0.78, 0.35, 1) if balance >= 0 else (0.86, 0.2, 0.2, 1)
+        bal_label = Label(text=f"Bilancio stagionale: {'+' if balance >= 0 else ''}{balance}",
+                          font_size="14sp", color=bal_color, size_hint_y=None, height=30)
+        self.content.add_widget(bal_label)
+
+        # Revenue breakdown
+        self.content.add_widget(self._section("📈 Entrate Stagionali", f"{team.season_revenue}"))
+        self.content.add_widget(self._line("Sponsor", team.sponsor_income(team.wins, team.goals_for) if hasattr(team, "sponsor_income") else 0))
+        self.content.add_widget(self._line("Premi campionato", team.season_prize_money))
+        self.content.add_widget(self._line("Biglietteria (stima)", team.stadium_revenue_per_match(0.6) * 10 if hasattr(team, "stadium_revenue_per_match") else 0))
+
+        # Expenses
+        self.content.add_widget(self._section("📉 Uscite Stagionali", f"{team.season_expenses}"))
+        self.content.add_widget(self._line("Payroll", team.payroll_per_round() * 10))
+        self.content.add_widget(self._line("Manutenzione", team.facilities_maintenance() if hasattr(team, "facilities_maintenance") else 0))
+
+        # Sponsors
+        self.content.add_widget(self._section("🤝 Sponsor", ""))
+        for s in (team.sponsors if team.sponsors else []):
+            info = f"{s.name}: {s.base_amount}/stagione + {s.bonus_per_win}/vittoria"
+            if s.bonus_per_goal:
+                info += f" + {s.bonus_per_goal}/gol"
+            info += f" ({s.duration_years} anni)"
+            self.content.add_widget(self._line(s.name, s.base_amount))
+
+        # Stadium
+        if team.stadium:
+            self.content.add_widget(self._section("🏟️ Stadio", team.stadium.name))
+            self.content.add_widget(self._line("Capacità", team.stadium.capacity))
+            self.content.add_widget(self._line("Prezzo biglietto", f"{team.stadium.ticket_price}€"))
+            self.content.add_widget(self._line("Livello", team.stadium.level))
+            self.content.add_widget(self._line("Manutenzione", team.stadium.seasonal_maintenance()))
+            upg_cost = team.stadium.upgrade_cost()
+            if team.stadium.level < 5:
+                upg_btn = styled_button(f"🔧 Espandi stadio ({upg_cost}€)",
+                    lambda _: self._upgrade_stadium())
+                self.content.add_widget(upg_btn)
+
+        # Facilities
+        if team.facilities:
+            self.content.add_widget(self._section("🏛️ Impianti", ""))
+            fac = team.facilities
+            self.content.add_widget(self._line("Academy (Lvl)", fac.academy_level))
+            self.content.add_widget(self._line("Centro Medico (Lvl)", fac.medical_level))
+            self.content.add_widget(self._line("Allenamento (Lvl)", fac.training_level))
+
+            for fac_type, label in [("academy", "Academy"), ("medical", "Centro Medico"), ("training", "Allenamento")]:
+                level = getattr(fac, fac_type + "_level", 1)
+                if level < 5:
+                    cost = fac.upgrade_cost(fac_type)
+                    btn = styled_button(f"🔧 +{label} (Lvl {level}→{level+1}, {cost}€)",
+                        lambda _, ft=fac_type: self._upgrade_facility(ft))
+                    self.content.add_widget(btn)
+
+    def _section(self, title, value):
+        lbl = Label(text=f"[b]{title}[/b] {value}", markup=True,
+                    font_size="16sp", color=ACCENT_COLOR, size_hint_y=None, height=35)
+        return lbl
+
+    def _line(self, label, value):
+        lbl = Label(text=f"  {label}: {value}", font_size="13sp",
+                    color=(0.7, 0.8, 0.9, 1), size_hint_y=None, height=25,
+                    halign="left")
+        lbl.bind(size=lambda inst, v: setattr(inst, "text_size", inst.size))
+        return lbl
+
+    def _upgrade_stadium(self):
+        team = self.app.user_team
+        if team.stadium and team.budget >= team.stadium.upgrade_cost():
+            team.budget -= team.stadium.upgrade_cost()
+            team.stadium.upgrade()
+            self._refresh()
+
+    def _upgrade_facility(self, fac_type):
+        team = self.app.user_team
+        if team.facilities and team.budget >= team.facilities.upgrade_cost(fac_type):
+            team.budget -= team.facilities.upgrade_cost(fac_type)
+            team.facilities.upgrade(fac_type)
+            self._refresh()

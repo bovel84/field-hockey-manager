@@ -908,3 +908,70 @@ def simulate_cup(bracket: CupBracket, seed: int = 0) -> Team:
         bracket.winner.prestige += 10
 
     return bracket.winner
+
+# ── Finance processing ──────────────────────────────────────────
+
+def process_match_finances(team, is_home: bool, result: str, goals_scored: int, goals_conceded: int):
+    """Process financial effects after a match.
+
+    Args:
+        team: The Team to process.
+        is_home: True if team played at home.
+        result: 'win', 'draw', or 'loss'.
+        goals_scored: Goals scored by the team.
+        goals_conceded: Goals conceded by the team.
+    """
+    # Ticket revenue (only home matches)
+    if is_home and team.stadium:
+        # Attendance ratio based on result and rivalry
+        ratio = 0.55
+        if result == 'win':
+            ratio = 0.7
+        elif result == 'draw':
+            ratio = 0.6
+        revenue = team.stadium.match_revenue(ratio)
+        team.season_revenue += revenue
+        team.budget += revenue
+
+    # Payroll deduction
+    payroll = team.payroll_per_round()
+    team.season_expenses += payroll
+    team.budget -= payroll
+
+
+def process_season_finances(team, wins: int, goals_scored: int, league_position: int, total_teams: int):
+    """Process end-of-season financial summary.
+
+    Args:
+        team: The Team to process.
+        wins: Total wins in the season.
+        goals_scored: Total goals scored.
+        league_position: Final position (1 = champion).
+        total_teams: Number of teams in the league.
+    """
+    # Sponsor income
+    sponsor_total = team.sponsor_income(wins, goals_scored)
+    team.season_revenue += sponsor_total
+    team.budget += sponsor_total
+
+    # Prize money based on league position
+    prize_pool = 500 + total_teams * 50
+    position_bonus = max(0, prize_pool - (league_position - 1) * 50)
+    team.season_prize_money += position_bonus
+    team.budget += position_bonus
+
+    # Facilities maintenance
+    maintenance = team.facilities_maintenance()
+    team.season_expenses += maintenance
+    team.budget -= maintenance
+
+    # Advance sponsor contracts
+    team.sponsors = [s for s in team.sponsors if s.advance_season()]
+
+    # Renew expired sponsors
+    if len(team.sponsors) < 2:
+        import random as _r
+        rng = _r.Random(hash(team.name + str(wins)) & 0xFFFFFFFF)
+        from src.models import generate_sponsors
+        new_sponsors = generate_sponsors(rng, count=2 - len(team.sponsors), prestige=team.prestige)
+        team.sponsors.extend(new_sponsors)

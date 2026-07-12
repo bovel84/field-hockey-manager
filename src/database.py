@@ -133,6 +133,12 @@ class Database:
             "pressing": "ALTER TABLE teams ADD COLUMN pressing TEXT DEFAULT 'Medio'",
             "tempo": "ALTER TABLE teams ADD COLUMN tempo TEXT DEFAULT 'Bilanciato'",
             "selected_lineup": "ALTER TABLE teams ADD COLUMN selected_lineup TEXT DEFAULT '[]'",
+            "sponsors": "ALTER TABLE teams ADD COLUMN sponsors TEXT DEFAULT '[]'",
+            "stadium": "ALTER TABLE teams ADD COLUMN stadium TEXT DEFAULT ''",
+            "facilities": "ALTER TABLE teams ADD COLUMN facilities TEXT DEFAULT ''",
+            "season_revenue": "ALTER TABLE teams ADD COLUMN season_revenue INTEGER DEFAULT 0",
+            "season_expenses": "ALTER TABLE teams ADD COLUMN season_expenses INTEGER DEFAULT 0",
+            "season_prize_money": "ALTER TABLE teams ADD COLUMN season_prize_money INTEGER DEFAULT 0",
         }
         for col, sql in team_migrations.items():
             if col not in existing_team_cols:
@@ -298,7 +304,7 @@ class Database:
         with self._connect() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT name, points, goals_for, goals_against, wins, draws, losses, budget, formation, intensity, pressing, tempo, selected_lineup, prestige "
+                "SELECT name, points, goals_for, goals_against, wins, draws, losses, budget, formation, intensity, pressing, tempo, selected_lineup, prestige, sponsors, stadium, facilities, season_revenue, season_expenses, season_prize_money "
                 "FROM teams WHERE name = ?",
                 (name,),
             )
@@ -364,6 +370,31 @@ class Database:
             prestige=row[13] if len(row) > 13 else 0,
             youth_players=youth_players,
         )
+        # Load finance fields
+        if len(row) > 14 and row[14]:
+            try:
+                from src.models import Sponsor
+                team.sponsors = [Sponsor(**s) for s in json.loads(row[14])]
+            except Exception:
+                team.sponsors = []
+        if len(row) > 15 and row[15]:
+            try:
+                from src.models import Stadium
+                team.stadium = Stadium(**json.loads(row[15]))
+            except Exception:
+                team.stadium = None
+        if len(row) > 16 and row[16]:
+            try:
+                from src.models import Facilities
+                team.facilities = Facilities(**json.loads(row[16]))
+            except Exception:
+                team.facilities = None
+        if len(row) > 17:
+            team.season_revenue = row[17] or 0
+        if len(row) > 18:
+            team.season_expenses = row[18] or 0
+        if len(row) > 19:
+            team.season_prize_money = row[19] or 0
 
     def load_all_teams(self) -> list[Team]:
         """Load all teams from the database."""

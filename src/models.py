@@ -230,6 +230,13 @@ class Team:
     youth_players: list[Player] = field(default_factory=list)  # Youth academy prospects
     rivals: list[str] = field(default_factory=list)  # Feature 2: rival teams for derby detection
     selected_starter_names: list[str] = field(default_factory=list)
+    # Finance & facilities
+    sponsors: list = field(default_factory=list)
+    stadium: object = None
+    facilities: object = None
+    season_revenue: int = 0
+    season_expenses: int = 0
+    season_prize_money: int = 0
 
     def initialize_squad_roles(self, force: bool = False) -> None:
         """Assign credible initial roles and wages from squad hierarchy."""
@@ -256,6 +263,45 @@ class Team:
     def payroll_per_round(self) -> int:
         """Return the total wage bill charged after a league fixture."""
         return sum(max(0, player.wage) for player in self.players)
+
+    def sponsor_income(self, wins: int = 0, goals: int = 0) -> int:
+        """Total sponsorship income for a season."""
+        return sum(s.seasonal_income(wins, goals) for s in self.sponsors)
+
+    def active_sponsors(self) -> list:
+        """Return sponsors with remaining duration."""
+        return [s for s in self.sponsors if s.duration_years > 0]
+
+    def stadium_revenue_per_match(self, ratio: float = 0.6) -> int:
+        """Match-day ticket revenue."""
+        if self.stadium:
+            return self.stadium.match_revenue(ratio)
+        return 0
+
+    def facilities_maintenance(self) -> int:
+        """Total facilities + stadium maintenance per season."""
+        total = 0
+        if self.stadium:
+            total += self.stadium.seasonal_maintenance()
+        if self.facilities:
+            total += self.facilities.academy_level * 30
+            total += self.facilities.medical_level * 30
+            total += self.facilities.training_level * 30
+        return total
+
+    def season_balance(self) -> int:
+        """Net financial balance for the current season."""
+        return self.season_revenue + self.season_prize_money - self.season_expenses
+
+    def init_finances(self, prestige: int = 0) -> None:
+        """Initialize sponsors, stadium, and facilities if not set."""
+        if not self.sponsors:
+            rng = _random.Random(hash(self.name) & 0xFFFFFFFF)
+            self.sponsors = generate_sponsors(rng, count=2, prestige=prestige)
+        if not self.stadium:
+            self.stadium = generate_stadium(self.name, prestige)
+        if not self.facilities:
+            self.facilities = Facilities()
 
     def formation_counts(self) -> dict[Position, int]:
         """Return the positional requirements of the selected formation."""
@@ -372,3 +418,135 @@ class Match:
         if self.played:
             return f"{home_name} {self.home_score} - {self.away_score} {away_name}"
         return f"{home_name} vs {away_name} (not played)"
+
+# ── Phase 3 Sprint 4: Finance, Sponsor & Facilities ───────────────────
+
+from dataclasses import dataclass as _dc, field as _field
+import random as _random
+from typing import Optional as _Optional
+
+
+@_dc
+class Sponsor:
+    """A club sponsor with annual deal and performance bonuses."""
+    name: str
+    base_amount: int          # base sponsorship per season
+    bonus_per_win: int = 0    # bonus for each win
+    bonus_per_goal: int = 0   # bonus per goal scored
+    duration_years: int = 1   # remaining contract years
+
+    def seasonal_income(self, wins: int = 0, goals: int = 0) -> int:
+        """Calculate total sponsor income for a season."""
+        return self.base_amount + self.wins_bonus(wins) + self.goals_bonus(goals)
+
+    def wins_bonus(self, wins: int) -> int:
+        return self.bonus_per_win * wins
+
+    def goals_bonus(self, goals: int) -> int:
+        return self.bonus_per_goal * goals
+
+    def advance_season(self) -> bool:
+        """Decrease duration; return True if still active."""
+        self.duration_years -= 1
+        return self.duration_years > 0
+
+
+@_dc
+class Stadium:
+    """Club stadium with capacity, ticket revenue, and maintenance."""
+    name: str = "Stadio Comunale"
+    capacity: int = 2000
+    ticket_price: int = 8       # price per ticket
+    maintenance_cost: int = 50  # per season
+    level: int = 1              # upgrade level (1-5)
+
+    def match_revenue(self, attendance_ratio: float = 0.6) -> int:
+        """Revenue from a single home match."""
+        attendance = int(self.capacity * attendance_ratio)
+        return attendance * self.ticket_price
+
+    def seasonal_maintenance(self) -> int:
+        """Maintenance cost per season, scales with level."""
+        return self.maintenance_cost * self.level
+
+    def upgrade_cost(self) -> int:
+        """Cost to upgrade to next level."""
+        return 300 * self.level
+
+    def upgrade(self) -> bool:
+        """Upgrade stadium if possible (max level 5)."""
+        if self.level >= 5:
+            return False
+        self.level += 1
+        self.capacity += 500
+        self.maintenance_cost += 20
+        return True
+
+
+@_dc
+class Facilities:
+    """Club training and medical facilities."""
+    academy_level: int = 1      # youth academy (1-5)
+    medical_level: int = 1      # medical center (1-5)
+    training_level: int = 1     # training ground (1-5)
+
+    def upgrade_cost(self, facility_type: str) -> int:
+        """Cost to upgrade a specific facility."""
+        level = getattr(self, facility_type + "_level", 1)
+        return 250 * level
+
+    def upgrade(self, facility_type: str) -> bool:
+        """Upgrade a facility (max level 5). Returns success."""
+        attr = facility_type + "_level"
+        level = getattr(self, attr, 0)
+        if level >= 5:
+            return False
+        setattr(self, attr, level + 1)
+        return True
+
+    def academy_bonus(self) -> float:
+        """Quality bonus for youth generation (0.0-0.4)."""
+        return (self.academy_level - 1) * 0.1
+
+    def medical_recovery_bonus(self) -> float:
+        """Recovery speed bonus for injured players (0.0-0.4)."""
+        return (self.medical_level - 1) * 0.1
+
+    def training_bonus(self) -> float:
+        """Training improvement bonus (0.0-0.4)."""
+        return (self.training_level - 1) * 0.1
+
+
+# Sponsor name pools for generation
+_SPONSOR_NAMES = [
+    "BioHockey", "EnerSport", "GreenField Co", "Mediterranea Assicurazioni",
+    "Sarda Trasporti", "TechHub Italia", "AquaPure", "Ristorante Da Mario",
+    "Hotel Cala Rossa", "GranaPadano Sport", "FlyAir", "VinoCantu",
+]
+
+
+def generate_sponsors(rng: _random.Random, count: int = 2, prestige: int = 0) -> list[Sponsor]:
+    """Generate sponsor deals based on club prestige."""
+    sponsors = []
+    names = rng.sample(_SPONSOR_NAMES, min(count, len(_SPONSOR_NAMES)))
+    for name in names:
+        base = 80 + prestige * 20 + rng.randint(0, 40)
+        sponsors.append(Sponsor(
+            name=name,
+            base_amount=base,
+            bonus_per_win=rng.randint(2, 6),
+            bonus_per_goal=rng.randint(0, 2),
+            duration_years=rng.randint(1, 3),
+        ))
+    return sponsors
+
+
+def generate_stadium(team_name: str, prestige: int = 0) -> Stadium:
+    """Generate a stadium for a team."""
+    return Stadium(
+        name=f"Stadio {team_name.split()[0]}",
+        capacity=1500 + prestige * 300,
+        ticket_price=8,
+        maintenance_cost=40 + prestige * 10,
+        level=1,
+    )
