@@ -551,7 +551,10 @@ class PartitaScreen(Screen):
         super().__init__(**kwargs)
         self.app = app
         make_screen_bg(self)
-        self.layout = BoxLayout(orientation="vertical", padding=16, spacing=10)
+        self.layout = BoxLayout(
+            orientation="vertical", padding=16, spacing=10, size_hint_y=None,
+        )
+        self.layout.bind(minimum_height=self.layout.setter("height"))
         self.layout.add_widget(section_title("⚽ Gioca Partita"))
 
         self.info_label = Label(text="", font_size="16sp", color=TEXT_COLOR, size_hint_y=None, height=40)
@@ -570,6 +573,30 @@ class PartitaScreen(Screen):
         )
         self.layout.add_widget(Label(text="Intensità:", font_size="14sp", color=TEXT_COLOR, size_hint_y=None, height=28))
         self.layout.add_widget(self.intensity_spinner)
+
+        advanced_row = BoxLayout(
+            orientation="horizontal", size_hint_y=None, height=44, spacing=6,
+        )
+        self.pressing_spinner = Spinner(
+            text="Medio", values=["Basso", "Medio", "Alto"], font_size="14sp",
+        )
+        self.tempo_spinner = Spinner(
+            text="Bilanciato",
+            values=["Controllato", "Bilanciato", "Rapido"],
+            font_size="14sp",
+        )
+        advanced_row.add_widget(self.pressing_spinner)
+        advanced_row.add_widget(self.tempo_spinner)
+        self.layout.add_widget(advanced_row)
+
+        self.scouting_label = Label(
+            text="", font_size="11sp", color=(0.68, 0.80, 0.92, 1),
+            size_hint_y=None, height=74, halign="left", valign="middle",
+        )
+        self.scouting_label.bind(
+            size=lambda inst, _value=None: setattr(inst, "text_size", inst.size)
+        )
+        self.layout.add_widget(self.scouting_label)
 
         # --- Substitution selection (C3) ---
         self.subs_label = Label(
@@ -624,7 +651,9 @@ class PartitaScreen(Screen):
         self.layout.add_widget(self.commentary_label)
 
         self.layout.add_widget(styled_button("⬅️ Indietro", lambda _: setattr(app.sm, 'current', 'menu')))
-        self.add_widget(self.layout)
+        self.scroll = ScrollView(do_scroll_x=False)
+        self.scroll.add_widget(self.layout)
+        self.add_widget(self.scroll)
 
     def on_enter(self):
         entry = self.app.get_next_match()
@@ -632,16 +661,22 @@ class PartitaScreen(Screen):
             home = self.app.teams[entry["home"]]
             away = self.app.teams[entry["away"]]
             self.info_label.text = f"{home.name} vs {away.name}"
+            self.scouting_label.text = self.app.get_scouting_report()
             self.play_btn.disabled = False
             # Populate substitution spinners with squad players
             team = self.app.user_team
             if team:
+                self.formation_spinner.text = team.formation
+                self.intensity_spinner.text = team.intensity
+                self.pressing_spinner.text = team.pressing
+                self.tempo_spinner.text = team.tempo
                 player_names = [p.name for p in team.players if p.can_play()]
                 for spin in self.sub_spinners:
                     spin.values = ["-"] + player_names
                     spin.text = "-"
         else:
             self.info_label.text = "Stagione finita! 🎉"
+            self.scouting_label.text = ""
             self.play_btn.disabled = True
         self.result_label.text = ""
         self.commentary_label.text = ""
@@ -658,6 +693,8 @@ class PartitaScreen(Screen):
         match = self.app.play_next_match(
             self.formation_spinner.text,
             self.intensity_spinner.text,
+            pressing=self.pressing_spinner.text,
+            tempo=self.tempo_spinner.text,
             user_subs=user_subs or None,
         )
         if not match:

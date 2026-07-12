@@ -114,10 +114,22 @@ class Player:
             base * morale_factor * form_factor * condition_factor * happiness_factor
         )))
 
-    def apply_match_load(self, intensity: str = "Bilanciata", played: bool = True) -> None:
-        """Apply fatigue after a match or recovery when the player is rested."""
+    def apply_match_load(
+        self,
+        intensity: str = "Bilanciata",
+        played: bool = True,
+        pressing: str = "Medio",
+        tempo: str = "Bilanciato",
+    ) -> None:
+        """Apply fatigue from intensity, pressing, tempo and player stamina."""
         if played:
-            fatigue = {"Difensiva": 12, "Bilanciata": 16, "Offensiva": 21}.get(intensity, 16)
+            fatigue = {"Difensiva": 12, "Bilanciata": 16, "Offensiva": 21}.get(
+                intensity, 16
+            )
+            fatigue += {"Basso": -2, "Medio": 0, "Alto": 4}.get(pressing, 0)
+            fatigue += {"Controllato": -2, "Bilanciato": 0, "Rapido": 3}.get(
+                tempo, 0
+            )
             fatigue += max(0, 65 - self.stamina) // 10
             self.condition = max(20, self.condition - fatigue)
             self.matches_since_rest += 1
@@ -212,6 +224,8 @@ class Team:
     budget: int = 500
     formation: str = "4-3-3"
     intensity: str = "Bilanciata"
+    pressing: str = "Medio"
+    tempo: str = "Bilanciato"
     prestige: int = 0  # Prestige from cup wins and playoff results
     youth_players: list[Player] = field(default_factory=list)  # Youth academy prospects
     rivals: list[str] = field(default_factory=list)  # Feature 2: rival teams for derby detection

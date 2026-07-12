@@ -33,6 +33,8 @@ class Database:
                     budget       INTEGER DEFAULT 500,
                     formation    TEXT DEFAULT '4-3-3',
                     intensity    TEXT DEFAULT 'Bilanciata',
+                    pressing     TEXT DEFAULT 'Medio',
+                    tempo        TEXT DEFAULT 'Bilanciato',
                     prestige     INTEGER DEFAULT 0
                 );
 
@@ -125,8 +127,14 @@ class Database:
         # Check teams table for prestige
         cursor.execute("PRAGMA table_info(teams)")
         existing_team_cols = {row[1] for row in cursor.fetchall()}
-        if "prestige" not in existing_team_cols:
-            conn.execute("ALTER TABLE teams ADD COLUMN prestige INTEGER DEFAULT 0")
+        team_migrations = {
+            "prestige": "ALTER TABLE teams ADD COLUMN prestige INTEGER DEFAULT 0",
+            "pressing": "ALTER TABLE teams ADD COLUMN pressing TEXT DEFAULT 'Medio'",
+            "tempo": "ALTER TABLE teams ADD COLUMN tempo TEXT DEFAULT 'Bilanciato'",
+        }
+        for col, sql in team_migrations.items():
+            if col not in existing_team_cols:
+                conn.execute(sql)
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self.db_path)
@@ -242,10 +250,13 @@ class Database:
         """Insert or replace a team and its players."""
         with self._connect() as conn:
             conn.execute(
-                """INSERT OR REPLACE INTO teams (name, points, goals_for, goals_against, wins, draws, losses, budget, formation, intensity, prestige)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT OR REPLACE INTO teams
+                   (name, points, goals_for, goals_against, wins, draws, losses,
+                    budget, formation, intensity, pressing, tempo, prestige)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (team.name, team.points, team.goals_for, team.goals_against,
-                 team.wins, team.draws, team.losses, team.budget, team.formation, team.intensity, team.prestige),
+                 team.wins, team.draws, team.losses, team.budget, team.formation,
+                 team.intensity, team.pressing, team.tempo, team.prestige),
             )
             # Delete old players for this team
             conn.execute("DELETE FROM players WHERE team_name = ?", (team.name,))
@@ -283,7 +294,7 @@ class Database:
         with self._connect() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT name, points, goals_for, goals_against, wins, draws, losses, budget, formation, intensity, prestige "
+                "SELECT name, points, goals_for, goals_against, wins, draws, losses, budget, formation, intensity, pressing, tempo, prestige "
                 "FROM teams WHERE name = ?",
                 (name,),
             )
@@ -341,7 +352,9 @@ class Database:
             budget=row[7],
             formation=row[8],
             intensity=row[9],
-            prestige=row[10] if len(row) > 10 else 0,
+            pressing=row[10] if len(row) > 10 else "Medio",
+            tempo=row[11] if len(row) > 11 else "Bilanciato",
+            prestige=row[12] if len(row) > 12 else 0,
             youth_players=youth_players,
         )
 
