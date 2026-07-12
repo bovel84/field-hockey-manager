@@ -35,6 +35,7 @@ class Database:
                     intensity    TEXT DEFAULT 'Bilanciata',
                     pressing     TEXT DEFAULT 'Medio',
                     tempo        TEXT DEFAULT 'Bilanciato',
+                    selected_lineup TEXT DEFAULT '[]',
                     prestige     INTEGER DEFAULT 0
                 );
 
@@ -131,6 +132,7 @@ class Database:
             "prestige": "ALTER TABLE teams ADD COLUMN prestige INTEGER DEFAULT 0",
             "pressing": "ALTER TABLE teams ADD COLUMN pressing TEXT DEFAULT 'Medio'",
             "tempo": "ALTER TABLE teams ADD COLUMN tempo TEXT DEFAULT 'Bilanciato'",
+            "selected_lineup": "ALTER TABLE teams ADD COLUMN selected_lineup TEXT DEFAULT '[]'",
         }
         for col, sql in team_migrations.items():
             if col not in existing_team_cols:
@@ -252,11 +254,13 @@ class Database:
             conn.execute(
                 """INSERT OR REPLACE INTO teams
                    (name, points, goals_for, goals_against, wins, draws, losses,
-                    budget, formation, intensity, pressing, tempo, prestige)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    budget, formation, intensity, pressing, tempo,
+                    selected_lineup, prestige)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (team.name, team.points, team.goals_for, team.goals_against,
                  team.wins, team.draws, team.losses, team.budget, team.formation,
-                 team.intensity, team.pressing, team.tempo, team.prestige),
+                 team.intensity, team.pressing, team.tempo,
+                 json.dumps(team.selected_starter_names), team.prestige),
             )
             # Delete old players for this team
             conn.execute("DELETE FROM players WHERE team_name = ?", (team.name,))
@@ -294,7 +298,7 @@ class Database:
         with self._connect() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT name, points, goals_for, goals_against, wins, draws, losses, budget, formation, intensity, pressing, tempo, prestige "
+                "SELECT name, points, goals_for, goals_against, wins, draws, losses, budget, formation, intensity, pressing, tempo, selected_lineup, prestige "
                 "FROM teams WHERE name = ?",
                 (name,),
             )
@@ -354,7 +358,10 @@ class Database:
             intensity=row[9],
             pressing=row[10] if len(row) > 10 else "Medio",
             tempo=row[11] if len(row) > 11 else "Bilanciato",
-            prestige=row[12] if len(row) > 12 else 0,
+            selected_starter_names=(
+                json.loads(row[12]) if len(row) > 12 and row[12] else []
+            ),
+            prestige=row[13] if len(row) > 13 else 0,
             youth_players=youth_players,
         )
 
