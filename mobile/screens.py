@@ -551,7 +551,10 @@ class PartitaScreen(Screen):
         super().__init__(**kwargs)
         self.app = app
         make_screen_bg(self)
-        self.layout = BoxLayout(orientation="vertical", padding=16, spacing=10)
+        self.layout = BoxLayout(
+            orientation="vertical", padding=16, spacing=10, size_hint_y=None,
+        )
+        self.layout.bind(minimum_height=self.layout.setter("height"))
         self.layout.add_widget(section_title("⚽ Gioca Partita"))
 
         self.info_label = Label(text="", font_size="16sp", color=TEXT_COLOR, size_hint_y=None, height=40)
@@ -648,7 +651,9 @@ class PartitaScreen(Screen):
         self.layout.add_widget(self.commentary_label)
 
         self.layout.add_widget(styled_button("⬅️ Indietro", lambda _: setattr(app.sm, 'current', 'menu')))
-        self.add_widget(self.layout)
+        self.scroll = ScrollView(do_scroll_x=False)
+        self.scroll.add_widget(self.layout)
+        self.add_widget(self.scroll)
 
     def on_enter(self):
         entry = self.app.get_next_match()
