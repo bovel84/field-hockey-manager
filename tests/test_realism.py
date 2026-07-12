@@ -56,3 +56,33 @@ def test_form_is_bounded():
 def test_injured_player_has_zero_effective_rating():
     player = make_player(injured=True, injury_duration=2)
     assert player.effective_rating() == 0
+
+
+def test_team_selection_uses_match_day_readiness():
+    from src.models import Team
+
+    fresh = make_player(name="Fresh", condition=100, form=70)
+    tired = make_player(
+        name="Tired Star", passing=85, shooting=85, defense=85,
+        speed=85, stamina=85, condition=20, form=20,
+    )
+    fillers = [
+        make_player(name=f"Player {index}", condition=100, form=50)
+        for index in range(10)
+    ]
+    team = Team(name="Test XI", players=[fresh, tired] + fillers)
+    starters = team.get_starters()
+    assert fresh in starters
+    assert tired not in starters
+
+
+def test_healing_clears_medical_diagnosis():
+    player = make_player(
+        injured=True,
+        injury_duration=1,
+        injury_type="Contusione",
+    )
+    player.heal_one_match()
+    assert player.injured is False
+    assert player.injury_duration == 0
+    assert player.injury_type == ""

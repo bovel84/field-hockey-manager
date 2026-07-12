@@ -78,6 +78,7 @@ class Player:
     morale: int = 50
     injured: bool = False
     injury_duration: int = 0  # matches remaining
+    injury_type: str = ""  # Human-readable medical diagnosis
     potential: int = 99  # Maximum reachable rating (for growth system)
     condition: int = 100  # Physical readiness, 0-100
     form: int = 50  # Recent performance, 0-100
@@ -140,6 +141,7 @@ class Player:
             if self.injury_duration <= 0:
                 self.injured = False
                 self.injury_duration = 0
+                self.injury_type = ""
 
     def apply_morale(self, delta: int) -> None:
         """Adjust morale by delta, clamped to [0, 100]."""
@@ -150,7 +152,10 @@ class Player:
         return self.age < 23
 
     def __str__(self) -> str:
-        inj = f" 🔴{self.injury_duration}" if self.injured else ""
+        inj = (
+            f" 🔴{self.injury_type or 'Infortunio'} ({self.injury_duration})"
+            if self.injured else ""
+        )
         return (
             f"{self.name} [{self.position.value}] OVR:{self.overall_rating()} "
             f"FORMA:{self.form} COND:{self.condition} G:{self.goals} "
@@ -195,9 +200,9 @@ class Team:
         for p in self.players:
             if p.can_play():
                 by_pos[p.position].append(p)
-        # Sort each group by overall rating descending
+        # Pick the best match-day options: form, morale and condition matter.
         for pos in by_pos:
-            by_pos[pos].sort(key=lambda p: p.overall_rating(), reverse=True)
+            by_pos[pos].sort(key=lambda p: p.effective_rating(), reverse=True)
         starters = (
             by_pos[Position.GOALKEEPER][:1]
             + by_pos[Position.DEFENSE][:4]
@@ -208,7 +213,7 @@ class Team:
         if len(starters) < 11 and len(self.players) >= 11:
             selected_ids = {id(p) for p in starters}
             remaining = [p for p in self.players if id(p) not in selected_ids and p.can_play()]
-            remaining.sort(key=lambda p: p.overall_rating(), reverse=True)
+            remaining.sort(key=lambda p: p.effective_rating(), reverse=True)
             starters.extend(remaining[: 11 - len(starters)])
         return starters[:11]
 

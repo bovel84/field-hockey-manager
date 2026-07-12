@@ -190,7 +190,8 @@ class PlayerCard(BoxLayout):
         )
         readiness = min(player.condition, player.form)
         status_text = (
-            f"🏥 {player.injury_duration} gare" if player.injured
+            f"🏥 {player.injury_type or 'Infortunio'} · {player.injury_duration} gare"
+            if player.injured
             else f"Cond {player.condition}  Forma {player.form}"
         )
         status_lbl = Label(

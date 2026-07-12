@@ -171,7 +171,7 @@ class MenuScreen(Screen):
         self.content.add_widget(kpis)
 
         overview = GridLayout(
-            cols=1 if compact else 2, spacing=10,
+            cols=1 if compact else 3, spacing=10,
             size_hint_y=None, height=300 if compact else 176,
         )
         overview.add_widget(self._card(
@@ -184,6 +184,20 @@ class MenuScreen(Screen):
             "Notizie dal club", latest_news,
             f"{app.supporters:,} sostenitori",
             accent=(0.23, 0.17, 0.12, 1),
+        ))
+        squad = team.players if team else []
+        injured = [player for player in squad if player.injured]
+        avg_condition = (
+            round(sum(player.condition for player in squad) / len(squad))
+            if squad else 0
+        )
+        medical_value = (
+            f"{len(injured)} indisponibili" if injured else "Rosa disponibile"
+        )
+        overview.add_widget(self._card(
+            "Centro medico", medical_value,
+            f"Condizione media {avg_condition}%",
+            accent=(0.16, 0.24, 0.18, 1) if not injured else (0.34, 0.15, 0.16, 1),
         ))
         self.content.add_widget(overview)
 
