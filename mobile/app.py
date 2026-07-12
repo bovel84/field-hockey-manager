@@ -348,7 +348,12 @@ class FieldHockeyManagerApp(App):
                 started = id(player) in starter_ids
                 if started:
                     player.appearances += 1
-                    player.apply_match_load(team.intensity, played=True)
+                    player.apply_match_load(
+                        team.intensity,
+                        played=True,
+                        pressing=team.pressing,
+                        tempo=team.tempo,
+                    )
                     player.update_form(won=won, drew=drew, scored=player.name in scorers)
                 else:
                     player.apply_match_load(played=False)
