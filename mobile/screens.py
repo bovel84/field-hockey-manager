@@ -845,9 +845,17 @@ class PartitaScreen(Screen):
                 self.intensity_spinner.text = team.intensity
                 self.pressing_spinner.text = team.pressing
                 self.tempo_spinner.text = team.tempo
-                player_names = [p.name for p in team.players if p.can_play()]
-                for spin in self.sub_spinners:
-                    spin.values = ["-"] + player_names
+                starters = team.get_starters()
+                starter_ids = {id(player) for player in starters}
+                starter_names = [player.name for player in starters]
+                bench_names = [
+                    player.name for player in team.players
+                    if player.can_play() and id(player) not in starter_ids
+                ]
+                for index, spin in enumerate(self.sub_spinners):
+                    spin.values = ["-"] + (
+                        starter_names if index % 2 == 0 else bench_names
+                    )
                     spin.text = "-"
         else:
             self.info_label.text = "Stagione finita! 🎉"
