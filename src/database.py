@@ -1,5 +1,6 @@
 """Database layer: SQLite init and CRUD operations."""
 from __future__ import annotations
+from datetime import datetime
 import json
 import os
 import sqlite3
@@ -81,6 +82,12 @@ class Database:
                     key   TEXT PRIMARY KEY,
                     value TEXT
                 );
+
+                CREATE TABLE IF NOT EXISTS save_slots (
+                    slot      INTEGER PRIMARY KEY,
+                    timestamp TEXT NOT NULL,
+                    state     TEXT NOT NULL
+                );
             """)
             # Migration: add columns to existing databases (m9)
             self._migrate(conn)
@@ -136,6 +143,80 @@ class Database:
         with self._connect() as conn:
             conn.execute("DELETE FROM game_state")
             conn.commit()
+
+    def save_game(self, slot: int, game_state: dict) -> bool:
+        """Persist a save slot with a JSON-serializable game state.
+
+        Args:
+            slot: Save slot number, supported range 1..3.
+            game_state: Serializable game state payload.
+
+        Returns:
+            True when the save succeeds, False for an invalid slot.
+        """
+        if slot not in (1, 2, 3):
+            return False
+        payload = dict(game_state)
+        timestamp = str(payload.get("timestamp") or datetime.now().isoformat(timespec="seconds"))
+        payload["timestamp"] = timestamp
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO save_slots (slot, timestamp, state) VALUES (?, ?, ?)",
+                (slot, timestamp, json.dumps(payload)),
+            )
+            conn.commit()
+        return True
+
+    def load_game(self, slot: int) -> Optional[dict]:
+        """Load a serialized save slot.
+
+        Args:
+            slot: Save slot number, supported range 1..3.
+
+        Returns:
+            The saved state dict, or None if the slot is empty/invalid.
+        """
+        if slot not in (1, 2, 3):
+            return None
+        with self._connect() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT state FROM save_slots WHERE slot = ?", (slot,))
+            row = cursor.fetchone()
+        if row is None:
+            return None
+        return json.loads(row[0])
+
+    def list_saves(self) -> list[dict]:
+        """Return metadata for all occupied save slots."""
+        with self._connect() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT slot, timestamp, state FROM save_slots ORDER BY slot")
+            rows = cursor.fetchall()
+
+        saves: list[dict] = []
+        for slot, timestamp, state_json in rows:
+            state = json.loads(state_json)
+            saves.append({
+                "slot": slot,
+                "team_name": state.get("user_team_name") or state.get("team_name") or "—",
+                "league_name": state.get("league_name") or state.get("league_id") or "—",
+                "season": int(state.get("season_number", state.get("season", 1))),
+                "timestamp": state.get("timestamp") or timestamp,
+            })
+        return saves
+
+    def delete_save(self, slot: int) -> bool:
+        """Delete a save slot.
+
+        Returns:
+            True if a row was deleted, False otherwise.
+        """
+        if slot not in (1, 2, 3):
+            return False
+        with self._connect() as conn:
+            cursor = conn.execute("DELETE FROM save_slots WHERE slot = ?", (slot,))
+            conn.commit()
+        return cursor.rowcount > 0
 
     # ------------------------------------------------------------------
     # Team CRUD
