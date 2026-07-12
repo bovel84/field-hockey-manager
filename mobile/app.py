@@ -510,10 +510,22 @@ class FieldHockeyManagerApp(App):
             for player in team.players:
                 season_aging(player)
                 age_player_one_year(player)
+                player.contract_years = max(0, player.contract_years - 1)
+                if player.contract_years == 0:
+                    player.happiness = max(0, player.happiness - 10)
                 player.appearances = 0
                 player.goals = 0
         if self.user_team:
             self.user_team.budget += prize
+            expired = [
+                player.name for player in self.user_team.players
+                if player.contract_years == 0
+            ]
+            if expired:
+                self.career_news.insert(
+                    0,
+                    "⚠️ Contratti scaduti: " + ", ".join(expired[:4]),
+                )
         self.season_number += 1
         self.current_round = 0
         self.trainings_used = 0
