@@ -19,6 +19,19 @@ _INTENSITY_MODIFIERS: dict[str, tuple[float, float]] = {
     "Offensiva": (1.2, 0.8),
 }
 
+# (own attacking output, opponent attacking output, fatigue load)
+_PRESSING_MODIFIERS: dict[str, tuple[float, float, float]] = {
+    "Basso": (0.94, 1.04, 0.88),
+    "Medio": (1.00, 1.00, 1.00),
+    "Alto": (1.08, 0.94, 1.20),
+}
+
+_TEMPO_MODIFIERS: dict[str, tuple[float, float, float]] = {
+    "Controllato": (0.94, 0.92, 0.88),
+    "Bilanciato": (1.00, 1.00, 1.00),
+    "Rapido": (1.10, 1.08, 1.16),
+}
+
 
 def simulate_match(
     home: Team,
@@ -28,6 +41,10 @@ def simulate_match(
     home_intensity: str = "Bilanciata",
     away_formation: str = "4-3-3",
     away_intensity: str = "Bilanciata",
+    home_pressing: str = "Medio",
+    away_pressing: str = "Medio",
+    home_tempo: str = "Bilanciato",
+    away_tempo: str = "Bilanciato",
     home_subs: list[dict] | None = None,
     away_subs: list[dict] | None = None,
 ) -> Match:
@@ -79,6 +96,29 @@ def simulate_match(
     home_factor *= home_int
     away_factor *= away_int
 
+    home_press_atk, home_press_exposure, home_press_load = _PRESSING_MODIFIERS.get(
+        home_pressing, _PRESSING_MODIFIERS["Medio"]
+    )
+    away_press_atk, away_press_exposure, away_press_load = _PRESSING_MODIFIERS.get(
+        away_pressing, _PRESSING_MODIFIERS["Medio"]
+    )
+    home_tempo_atk, home_tempo_exposure, home_tempo_load = _TEMPO_MODIFIERS.get(
+        home_tempo, _TEMPO_MODIFIERS["Bilanciato"]
+    )
+    away_tempo_atk, away_tempo_exposure, away_tempo_load = _TEMPO_MODIFIERS.get(
+        away_tempo, _TEMPO_MODIFIERS["Bilanciato"]
+    )
+    home_factor *= (
+        home_press_atk * home_tempo_atk
+        * away_press_exposure * away_tempo_exposure
+    )
+    away_factor *= (
+        away_press_atk * away_tempo_atk
+        * home_press_exposure * home_tempo_exposure
+    )
+    home_tactical_load = home_press_load * home_tempo_load
+    away_tactical_load = away_press_load * away_tempo_load
+
     # --- Substitution tracking ---
     home_sub_events = home_subs or []
     away_sub_events = away_subs or []
@@ -103,8 +143,8 @@ def simulate_match(
 
     for quarter in range(1, 5):
         # --- Stamina decay: tired starters lose rating in quarters 3 and 4 ---
-        home_decay = _stamina_decay(home_active, quarter)
-        away_decay = _stamina_decay(away_active, quarter)
+        home_decay = min(0.28, _stamina_decay(home_active, quarter) * home_tactical_load)
+        away_decay = min(0.28, _stamina_decay(away_active, quarter) * away_tactical_load)
 
         # Apply decay to goal factors for this quarter
         quarter_home_factor = home_factor * (1.0 - home_decay)
@@ -118,7 +158,10 @@ def simulate_match(
                 if sub_event:
                     match.events.append(sub_event)
                     home_subs_count += 1
-                    home_decay = _stamina_decay(home_active, quarter)
+                    home_decay = min(
+                        0.28,
+                        _stamina_decay(home_active, quarter) * home_tactical_load,
+                    )
                     quarter_home_factor = home_factor * (1.0 - home_decay)
 
         away_subs_count = len([e for e in match.events if e.get("type") == "substitution" and e.get("team") == "away"])
@@ -128,7 +171,10 @@ def simulate_match(
                 if sub_event:
                     match.events.append(sub_event)
                     away_subs_count += 1
-                    away_decay = _stamina_decay(away_active, quarter)
+                    away_decay = min(
+                        0.28,
+                        _stamina_decay(away_active, quarter) * away_tactical_load,
+                    )
                     quarter_away_factor = away_factor * (1.0 - away_decay)
 
         # --- Feature: Rigori, corti angoli, cartellini verdi ---
