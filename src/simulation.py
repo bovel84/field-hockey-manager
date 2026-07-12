@@ -215,22 +215,66 @@ def simulate_match(
 
 
 def _check_injuries(team: Team, rng: random.Random, match: Match) -> None:
-    """Check for injuries after a match. 5-10% chance for a random player."""
-    available = [p for p in team.players if p.can_play()]
+    """Apply a condition- and intensity-based injury risk after a match."""
+    available = [player for player in team.players if player.can_play()]
     if not available:
         return
-    injury_chance = rng.uniform(0.05, 0.10)
-    if rng.random() < injury_chance:
-        victim = rng.choice(available)
-        duration = rng.randint(1, 3)
-        victim.injured = True
-        victim.injury_duration = duration
-        match.events.append({
-            "type": "injury",
-            "team": "home" if team == match.home_team else "away",
-            "player": victim.name,
-            "duration": duration,
-        })
+
+    starters = team.get_starters()
+    exposed = starters or available
+    avg_condition = sum(player.condition for player in exposed) / len(exposed)
+    low_condition_risk = max(0.0, (75.0 - avg_condition) * 0.002)
+    intensity_risk = {
+        "Difensiva": 0.00,
+        "Bilanciata": 0.015,
+        "Offensiva": 0.035,
+    }.get(team.intensity, 0.015)
+    overload_risk = min(
+        0.04,
+        sum(max(0, player.matches_since_rest - 2) for player in exposed) * 0.003,
+    )
+    injury_chance = min(0.22, 0.045 + low_condition_risk + intensity_risk + overload_risk)
+    if rng.random() >= injury_chance:
+        return
+
+    # Tired and overloaded players are more exposed than fresh teammates.
+    weighted: list[Player] = []
+    for player in exposed:
+        weight = 1 + max(0, 75 - player.condition) // 10
+        weight += max(0, player.matches_since_rest - 2)
+        weighted.extend([player] * max(1, weight))
+    victim = rng.choice(weighted)
+
+    severity_roll = rng.random()
+    if severity_roll < 0.62:
+        diagnosis, duration = rng.choice([
+            ("Affaticamento muscolare", 1),
+            ("Contusione", 1),
+            ("Sovraccarico", 2),
+        ])
+    elif severity_roll < 0.92:
+        diagnosis, duration = rng.choice([
+            ("Distrazione muscolare", 2),
+            ("Distorsione lieve", 3),
+            ("Problema al flessore", 3),
+        ])
+    else:
+        diagnosis, duration = rng.choice([
+            ("Lesione muscolare", 4),
+            ("Distorsione al ginocchio", 5),
+        ])
+
+    victim.injured = True
+    victim.injury_duration = duration
+    victim.injury_type = diagnosis
+    match.events.append({
+        "type": "injury",
+        "team": "home" if team == match.home_team else "away",
+        "player": victim.name,
+        "diagnosis": diagnosis,
+        "duration": duration,
+        "risk": round(injury_chance, 3),
+    })
 
 
 def _poisson_sample(lam: float, rng: random.Random) -> int:
