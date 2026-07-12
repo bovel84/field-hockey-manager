@@ -520,6 +520,126 @@ def generate_cup_bracket(teams: list[Team], rng: random.Random | None = None) ->
     return bracket
 
 
+def generate_cup_headlines(bracket: CupBracket) -> list[str]:
+    """Generate narrative headlines for cup rounds.
+
+    Iterates through the cup bracket rounds, identifying upsets (lower-rated
+    team beating a higher-rated team) and the final. Returns a list of
+    headline strings.
+
+    Args:
+        bracket: A simulated CupBracket with all matches played.
+    Returns:
+        List of headline strings.
+    """
+    headlines: list[str] = []
+    round_names = [
+        "Quarti di Finale",
+        "Semifinale",
+        "Finale",
+    ]
+    for round_idx, round_matches in enumerate(bracket.rounds):
+        round_name = round_names[round_idx] if round_idx < len(round_names) else f"Round {round_idx + 1}"
+        for m in round_matches:
+            if not m.played:
+                continue
+            if m.home_team is None or m.away_team is None:
+                continue
+            # Skip bye matches
+            if m.home_team.name == m.away_team.name:
+                continue
+            winner = m.home_team if m.home_score >= m.away_score else m.away_team
+            loser = m.away_team if m.home_score >= m.away_score else m.home_team
+            # Check for upset (winner has lower rating)
+            winner_rating = winner.team_rating()
+            loser_rating = loser.team_rating()
+            if winner_rating < loser_rating - 5:
+                headlines.append(f"🚨 {winner.name} elimina {loser.name} al {round_name}!")
+    # Cup winner headline
+    if bracket.winner:
+        headlines.append(f"🏆 {bracket.winner.name} vince la Coppa Nazionale!")
+    return headlines
+
+
+def generate_playoff_headlines(bracket: PlayoffBracket) -> list[str]:
+    """Generate narrative headlines for playoff matches.
+
+    Creates headlines for semifinals and the final, including upset detection.
+
+    Args:
+        bracket: A simulated PlayoffBracket with all matches played.
+    Returns:
+        List of headline strings.
+    """
+    headlines: list[str] = []
+    # Semifinal 1
+    if bracket.semifinal1.played and bracket.semifinal1.home_team != bracket.semifinal1.away_team:
+        sf1 = bracket.semifinal1
+        winner = sf1.home_team if sf1.home_score >= sf1.away_score else sf1.away_team
+        loser = sf1.away_team if sf1.home_score >= sf1.away_score else sf1.home_team
+        if winner.team_rating() < loser.team_rating() - 5:
+            headlines.append(f"🚨 {winner.name} elimina {loser.name} in Semifinale!")
+        else:
+            headlines.append(f"✅ {winner.name} accede alla Finale contro {loser.name}.")
+    # Semifinal 2
+    if bracket.semifinal2.played and bracket.semifinal2.home_team != bracket.semifinal2.away_team:
+        sf2 = bracket.semifinal2
+        winner = sf2.home_team if sf2.home_score >= sf2.away_score else sf2.away_team
+        loser = sf2.away_team if sf2.home_score >= sf2.away_score else sf2.home_team
+        if winner.team_rating() < loser.team_rating() - 5:
+            headlines.append(f"🚨 {winner.name} elimina {loser.name} in Semifinale!")
+        else:
+            headlines.append(f"✅ {winner.name} accede alla Finale contro {loser.name}.")
+    # Final
+    if bracket.final and bracket.final.played:
+        if bracket.winner:
+            headlines.append(f"🏆 {bracket.winner.name} CAMPIONE D'ITALIA!")
+    return headlines
+
+
+def develop_youth_players(team: Team, rng: random.Random | None = None) -> list[str]:
+    """Develop youth academy players over a season.
+
+    For each youth player, selects 1-2 random attributes and improves them:
+    - Age 16-17: +1 per attribute
+    - Age 18: +2 per attribute
+    - Bonus +1 if potential > 80
+    Gains are capped at the player's potential.
+
+    Args:
+        team: The team whose youth players should develop.
+        rng: Optional RNG for deterministic tests.
+    Returns:
+        List of development report strings.
+    """
+    if rng is None:
+        rng = random.Random()
+    reports: list[str] = []
+    attrs = ["passing", "shooting", "defense", "speed", "stamina"]
+    for yp in team.youth_players:
+        n_attrs = rng.randint(1, 2)
+        chosen = rng.sample(attrs, n_attrs)
+        gains = []
+        for attr in chosen:
+            current = getattr(yp, attr)
+            max_val = min(99, yp.potential)
+            if yp.age <= 17:
+                gain = 1
+            else:
+                gain = 2
+            # Bonus for high potential
+            if yp.potential > 80:
+                gain += 1
+            new_val = min(max_val, current + gain)
+            actual_gain = new_val - current
+            if actual_gain > 0:
+                setattr(yp, attr, new_val)
+                gains.append(f"{attr} +{actual_gain}")
+        if gains:
+            reports.append(f"{yp.name} (età {yp.age}): {', '.join(gains)}")
+    return reports
+
+
 def simulate_cup(bracket: CupBracket, seed: int = 0) -> Team:
     """Simulate the entire Coppa Nazionale bracket.
 

@@ -106,6 +106,7 @@ class Team:
     intensity: str = "Bilanciata"
     prestige: int = 0  # Prestige from cup wins and playoff results
     youth_players: list[Player] = field(default_factory=list)  # Youth academy prospects
+    rivals: list[str] = field(default_factory=list)  # Feature 2: rival teams for derby detection
 
     def team_rating(self) -> int:
         """Average rating of the 11 starters (using effective_rating)."""

@@ -157,7 +157,8 @@ class FieldHockeyManagerApp(App):
                     speed=p_data["speed"],
                     stamina=p_data["stamina"],
                 ))
-            team = Team(name=t_data["name"], players=players, budget=t_data.get("budget", 500))
+            team = Team(name=t_data["name"], players=players, budget=t_data.get("budget", 500),
+                        rivals=t_data.get("rivals", []))
             self.teams.append(team)
 
         saved_teams = self.db.load_all_teams()
@@ -230,6 +231,9 @@ class FieldHockeyManagerApp(App):
         self._played_matches_history.append(match)
         home = match.home_team
         away = match.away_team
+        # Feature 2: Derby detection for doubled morale delta
+        is_derby = away.name in (home.rivals or [])
+        morale_delta = 20 if is_derby else 10
         home.goals_for += match.home_score
         home.goals_against += match.away_score
         away.goals_for += match.away_score
@@ -240,17 +244,17 @@ class FieldHockeyManagerApp(App):
             home.wins += 1
             away.losses += 1
             for p in home.get_starters():
-                p.apply_morale(10)
+                p.apply_morale(morale_delta)
             for p in away.get_starters():
-                p.apply_morale(-10)
+                p.apply_morale(-morale_delta)
         elif match.home_score < match.away_score:
             away.points += 3
             away.wins += 1
             home.losses += 1
             for p in away.get_starters():
-                p.apply_morale(10)
+                p.apply_morale(morale_delta)
             for p in home.get_starters():
-                p.apply_morale(-10)
+                p.apply_morale(-morale_delta)
         else:
             home.points += 1
             away.points += 1
@@ -276,22 +280,42 @@ class FieldHockeyManagerApp(App):
         user_score = match.home_score if is_home else match.away_score
         opponent_score = match.away_score if is_home else match.home_score
         opponent = match.away_team if is_home else match.home_team
+        # Feature 2: Derby detection — double morale/supporters delta
+        user_team = self.user_team
+        is_derby = (
+            user_team is not None
+            and opponent.name in (user_team.rivals or [])
+        )
+        morale_mult = 2 if is_derby else 1
+        supporters_mult = 2 if is_derby else 1
         if user_score > opponent_score:
             self.manager_reputation = min(100, self.manager_reputation + 2)
             self.board_confidence = min(100, self.board_confidence + 4)
-            self.supporters += 80
+            self.supporters += 80 * supporters_mult
             headline = f"Vittoria contro {opponent.name}: la dirigenza è soddisfatta."
+            if is_derby:
+                headline = f"🔥 Derby vinto contro {opponent.name}! Tifosi in visibilio!"
         elif user_score == opponent_score:
             self.board_confidence = min(100, self.board_confidence + 1)
-            self.supporters += 15
+            self.supporters += 15 * supporters_mult
             headline = f"Pareggio contro {opponent.name}: prestazione solida."
+            if is_derby:
+                headline = f"🔥 Derby pareggiato contro {opponent.name}."
         else:
             self.manager_reputation = max(0, self.manager_reputation - 1)
             self.board_confidence = max(0, self.board_confidence - 4)
-            self.supporters = max(100, self.supporters - 35)
+            self.supporters = max(100, self.supporters - 35 * supporters_mult)
             headline = f"Sconfitta contro {opponent.name}: aumenta la pressione."
+            if is_derby:
+                headline = f"🔥 Derby perso contro {opponent.name}: tifosi furiosi!"
         self.career_news.insert(0, headline)
         self.career_news = self.career_news[:6]
+
+        # Feature 2: Double morale delta for derby in _apply_result
+        # Applied via match.events — actual morale change happens in _apply_result
+        # We mark derby matches for doubled morale there
+        if is_derby:
+            match.events.append({"type": "derby", "teams": [user_team.name if user_team else "", opponent.name]})
 
     def start_new_season(self) -> bool:
         """Advance the career after the current championship is complete."""
@@ -299,7 +323,10 @@ class FieldHockeyManagerApp(App):
             return False
 
         # --- Playoff scudetto (top 4 teams) ---
-        from src.season import Standings, generate_playoff_bracket, simulate_playoff
+        from src.season import (
+            Standings, generate_playoff_bracket, simulate_playoff,
+            generate_playoff_headlines,
+        )
         standings = Standings()
         for m in self._played_matches_history:
             standings.update(m)
@@ -311,11 +338,16 @@ class FieldHockeyManagerApp(App):
                 self.manager_reputation = min(100, self.manager_reputation + 5)
                 self.board_confidence = min(100, self.board_confidence + 10)
                 self.supporters += 200
+            # Feature 1: Integra le headline narrative dei playoff
+            for headline in generate_playoff_headlines(bracket):
+                self.career_news.insert(0, headline)
         except Exception:
             pass  # Not enough teams for playoff
 
         # --- Coppa Nazionale ---
-        from src.season import generate_cup_bracket, simulate_cup
+        from src.season import (
+            generate_cup_bracket, simulate_cup, generate_cup_headlines,
+        )
         try:
             cup_bracket = generate_cup_bracket(self.teams)
             cup_winner = simulate_cup(cup_bracket, seed=self.season_number * 200)
@@ -324,6 +356,9 @@ class FieldHockeyManagerApp(App):
                 if cup_winner == self.user_team:
                     self.manager_reputation = min(100, self.manager_reputation + 3)
                     self.supporters += 100
+                # Feature 1: Integra le headline narrative della coppa
+                for headline in generate_cup_headlines(cup_bracket):
+                    self.career_news.insert(0, headline)
         except Exception:
             pass  # Not enough teams for cup
 

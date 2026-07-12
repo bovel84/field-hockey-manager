@@ -181,6 +181,10 @@
           "potential": 76,
           "age": 30
         }
+      ],
+      "rivals": [
+        "Valchisone",
+        "Città del Tricolore"
       ]
     },
     {
@@ -364,6 +368,10 @@
           "potential": 74,
           "age": 28
         }
+      ],
+      "rivals": [
+        "Butterfly Roma",
+        "Tevere Eur"
       ]
     },
     {
@@ -547,6 +555,10 @@
           "potential": 70,
           "age": 27
         }
+      ],
+      "rivals": [
+        "Lazio Hockey",
+        "Tevere Eur"
       ]
     },
     {
@@ -730,6 +742,10 @@
           "potential": 66,
           "age": 30
         }
+      ],
+      "rivals": [
+        "Lazio Hockey",
+        "Butterfly Roma"
       ]
     },
     {
@@ -913,6 +929,9 @@
           "potential": 68,
           "age": 32
         }
+      ],
+      "rivals": [
+        "Ferrini"
       ]
     },
     {
@@ -1096,6 +1115,9 @@
           "potential": 64,
           "age": 24
         }
+      ],
+      "rivals": [
+        "Amsicora"
       ]
     },
     {
@@ -1279,6 +1301,10 @@
           "potential": 67,
           "age": 28
         }
+      ],
+      "rivals": [
+        "HC Bra",
+        "Città del Tricolore"
       ]
     },
     {
@@ -1462,6 +1488,10 @@
           "potential": 62,
           "age": 22
         }
+      ],
+      "rivals": [
+        "HC Bra",
+        "Valchisone"
       ]
     }
   ]

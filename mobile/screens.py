@@ -158,9 +158,18 @@ class CalendarioScreen(Screen):
             home_score = getattr(entry, 'home_score', 0) if played else 0
             away_score = getattr(entry, 'away_score', 0) if played else 0
             is_user = user_name in (home.name, away.name)
+            # Feature 2: Highlight derby matches with 🔥
+            is_derby = away.name in (home.rivals or [])
             row = MatchResult(
                 home.name, away.name, home_score, away_score, played, is_user,
             )
+            if is_derby:
+                # Prepend fire emoji to the row label for derby visibility
+                derby_label = Label(
+                    text="🔥 Derby",", font_size="12sp", color=(0.95, 0.4, 0.1, 1),
+                    size_hint_y=None, height=18,
+                )
+                self.list_layout.add_widget(derby_label)
             self.list_layout.add_widget(row)
 
 

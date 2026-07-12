@@ -51,7 +51,11 @@ def simulate_match(
     """
     rng = random.Random(seed)
 
-    home_rating = home.team_rating() + 5  # home advantage
+    # Feature 2: Derby home advantage — if away team is a rival of home team,
+    # home advantage is +10 instead of the default +5
+    is_derby = away.name in (home.rivals or [])
+    home_advantage = 10 if is_derby else 5
+    home_rating = home.team_rating() + home_advantage  # home advantage
     away_rating = away.team_rating()
 
     # Apply formation modifiers
