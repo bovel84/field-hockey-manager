@@ -375,6 +375,10 @@ def generate_free_agents(count: int = 5, rng: random.Random | None = None) -> li
             morale=50,
             potential=potential,
         )
+        agent.contract_years = rng.randint(1, 4)
+        agent.wage = max(1, agent.overall_rating() // 25)
+        agent.squad_role = "Prospetto" if age <= 21 else "Rotazione"
+        agent.happiness = rng.randint(50, 75)
         agents.append(agent)
     return agents
 
