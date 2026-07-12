@@ -353,11 +353,11 @@ class ContractsScreen(Screen):
             return
         team.budget -= signing_bonus
         self.app.save_game()
+        self.on_enter()
         self.result.text = (
             f"✅ Rinnovo firmato per {years} anni. Bonus alla firma: {signing_bonus}."
         )
         self.result.color = (0.2, 0.78, 0.35, 1)
-        self.on_enter()
 
 
 # ── Save / Load ───────────────────────────────────────────────
