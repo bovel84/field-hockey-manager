@@ -252,3 +252,86 @@ def test_simulation_accepts_advanced_match_plan():
         away_tempo="Controllato",
     )
     assert match.played is True
+
+
+def make_balanced_squad():
+    positions = (
+        [Position.GOALKEEPER] * 2
+        + [Position.DEFENSE] * 6
+        + [Position.MIDFIELD] * 6
+        + [Position.ATTACK] * 5
+    )
+    return [
+        make_player(name=f"Balanced {index}", position=position)
+        for index, position in enumerate(positions)
+    ]
+
+
+def test_auto_lineup_respects_433_shape():
+    from src.models import Team
+
+    team = Team(name="Shape HC", players=make_balanced_squad(), formation="4-3-3")
+    starters = team.get_starters()
+    assert len(starters) == 11
+    assert sum(p.position == Position.GOALKEEPER for p in starters) == 1
+    assert sum(p.position == Position.DEFENSE for p in starters) == 4
+    assert sum(p.position == Position.MIDFIELD for p in starters) == 3
+    assert sum(p.position == Position.ATTACK for p in starters) == 3
+
+
+def test_manual_lineup_requires_exactly_eleven():
+    from src.models import Team
+
+    team = Team(name="Manual HC", players=make_balanced_squad())
+    ok, message = team.set_manual_lineup(
+        [player.name for player in team.players[:10]]
+    )
+    assert ok is False
+    assert "esattamente 11" in message
+
+
+def test_manual_lineup_requires_goalkeeper():
+    from src.models import Team
+
+    squad = make_balanced_squad()
+    team = Team(name="No Keeper HC", players=squad)
+    without_keeper = [
+        player.name for player in squad
+        if player.position != Position.GOALKEEPER
+    ][:11]
+    ok, message = team.set_manual_lineup(without_keeper)
+    assert ok is False
+    assert "portiere" in message
+
+
+def test_unbalanced_manual_lineup_reduces_team_rating():
+    from src.models import Team
+
+    squad = make_balanced_squad()
+    team = Team(name="Balance HC", players=squad, formation="4-3-3")
+    balanced = team.get_starters()
+    balanced_rating = team.team_rating()
+    goalkeeper = next(p for p in squad if p.position == Position.GOALKEEPER)
+    defenders = [p for p in squad if p.position == Position.DEFENSE][:6]
+    midfielders = [p for p in squad if p.position == Position.MIDFIELD][:4]
+    names = [goalkeeper.name] + [p.name for p in defenders + midfielders]
+    ok, _ = team.set_manual_lineup(names)
+    assert ok is True
+    assert team.lineup_balance_penalty() > 0
+    assert team.team_rating() < balanced_rating
+
+
+def test_manual_lineup_is_persisted(tmp_path):
+    from src.database import Database
+    from src.models import Team
+
+    squad = make_balanced_squad()
+    team = Team(name="Saved XI", players=squad)
+    names = [player.name for player in team.get_starters()]
+    assert team.set_manual_lineup(names)[0] is True
+    database = Database(str(tmp_path / "lineup.db"))
+    database.init()
+    database.save_team(team)
+    loaded = database.load_team("Saved XI")
+    assert loaded is not None
+    assert loaded.selected_starter_names == names
