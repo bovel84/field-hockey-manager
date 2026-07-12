@@ -216,7 +216,8 @@ class MenuScreen(Screen):
         )
         for label, target in [
             ("💼 Carriera", "carriera"), ("🥅 Rosa", "rosa"),
-            ("📋 Tattiche e partita", "partita"), ("🏋 Allenamenti", "allenamenti"),
+            ("👥 Formazione", "formazione"), ("📋 Tattiche e partita", "partita"),
+            ("🏋 Allenamenti", "allenamenti"),
             ("📅 Calendario", "calendario"), ("🏆 Classifica", "classifica"),
             ("📊 Statistiche", "statistiche"), ("💰 Mercato", "mercato"),
             ("🌱 Vivaio", "youth"), ("📑 Contratti", "contratti"),
@@ -542,6 +543,180 @@ class ClassificaScreen(Screen):
             row.add_widget(Label(text=str(team.goals_for), font_size="13sp", color=TEXT_COLOR))
             row.add_widget(Label(text=str(team.goals_against), font_size="13sp", color=TEXT_COLOR))
             self.list_layout.add_widget(row)
+
+
+# ── Formazione titolare ─────────────────────────────────────────
+
+class LineupScreen(Screen):
+    """Select and persist the starting eleven."""
+
+    def __init__(self, app, **kwargs):
+        super().__init__(**kwargs)
+        self.app = app
+        self.selected_names: list[str] = []
+        make_screen_bg(self)
+        layout = BoxLayout(orientation="vertical", padding=14, spacing=7)
+        layout.add_widget(section_title("👥 Formazione titolare"))
+
+        controls = BoxLayout(
+            orientation="horizontal", size_hint_y=None, height=44, spacing=6,
+        )
+        self.formation_spinner = Spinner(
+            text="4-3-3", values=["4-3-3", "4-4-2", "3-5-2", "5-3-2"],
+        )
+        self.formation_spinner.bind(text=self._change_formation)
+        self.counter = Label(text="0/11", font_size="15sp", color=TEXT_COLOR)
+        controls.add_widget(self.formation_spinner)
+        controls.add_widget(self.counter)
+        layout.add_widget(controls)
+
+        self.scroll = ScrollView()
+        self.players_layout = BoxLayout(
+            orientation="vertical", size_hint_y=None, spacing=5,
+        )
+        self.players_layout.bind(
+            minimum_height=self.players_layout.setter("height")
+        )
+        self.scroll.add_widget(self.players_layout)
+        layout.add_widget(self.scroll)
+
+        self.feedback = Label(
+            text="", font_size="13sp", color=TEXT_COLOR,
+            size_hint_y=None, height=42,
+        )
+        layout.add_widget(self.feedback)
+
+        action_row = BoxLayout(
+            orientation="horizontal", size_hint_y=None, height=48, spacing=6,
+        )
+        action_row.add_widget(styled_button(
+            "Scelta automatica", self._auto_select,
+            bg_color=(0.20, 0.40, 0.62, 1), height=46,
+        ))
+        action_row.add_widget(styled_button(
+            "Salva XI", self._save_lineup,
+            bg_color=(0.08, 0.55, 0.34, 1), height=46,
+        ))
+        layout.add_widget(action_row)
+        layout.add_widget(styled_button(
+            "⬅️ Indietro", lambda _btn: setattr(app.sm, "current", "menu"),
+            height=46,
+        ))
+        self.add_widget(layout)
+
+    def on_enter(self):
+        team = self.app.user_team
+        if not team:
+            return
+        self.formation_spinner.text = team.formation
+        valid_saved = [
+            name for name in team.selected_starter_names
+            if any(player.name == name and player.can_play() for player in team.players)
+        ]
+        self.selected_names = (
+            valid_saved if len(valid_saved) == 11
+            else [player.name for player in team.get_starters()]
+        )
+        self._render_players()
+
+    def _change_formation(self, *_args):
+        team = self.app.user_team
+        if team:
+            team.formation = self.formation_spinner.text
+        if self.manager:
+            self._render_players()
+
+    def _render_players(self):
+        self.players_layout.clear_widgets()
+        team = self.app.user_team
+        if not team:
+            return
+        position_order = {
+            Position.GOALKEEPER: 0,
+            Position.DEFENSE: 1,
+            Position.MIDFIELD: 2,
+            Position.ATTACK: 3,
+        }
+        players = sorted(
+            team.players,
+            key=lambda player: (
+                position_order[player.position],
+                -player.effective_rating(),
+            ),
+        )
+        for player in players:
+            selected = player.name in self.selected_names
+            unavailable = not player.can_play()
+            button = Button(
+                text=(
+                    f"{'✓' if selected else '○'} {player.name} | "
+                    f"{player.position.value} | Eff {player.effective_rating()} | "
+                    f"Cond {player.condition} | Forma {player.form}"
+                ),
+                font_size="13sp", size_hint_y=None, height=46,
+                background_color=(
+                    (0.10, 0.52, 0.32, 1) if selected
+                    else ((0.45, 0.16, 0.18, 1) if unavailable
+                          else (0.16, 0.22, 0.32, 1))
+                ),
+                color=TEXT_COLOR,
+                disabled=unavailable,
+            )
+            button.bind(
+                on_press=lambda _btn, item=player: self._toggle_player(item)
+            )
+            self.players_layout.add_widget(button)
+        self._update_summary()
+
+    def _toggle_player(self, player):
+        if player.name in self.selected_names:
+            self.selected_names.remove(player.name)
+        elif len(self.selected_names) < 11:
+            self.selected_names.append(player.name)
+        else:
+            self.feedback.text = "Rimuovi prima un titolare."
+            self.feedback.color = (0.95, 0.55, 0.20, 1)
+        self._render_players()
+
+    def _update_summary(self):
+        team = self.app.user_team
+        self.counter.text = f"{len(self.selected_names)}/11"
+        if not team:
+            return
+        selected = [
+            player for player in team.players
+            if player.name in self.selected_names
+        ]
+        penalty = team.lineup_balance_penalty(selected) if selected else 0
+        self.feedback.text = (
+            f"Equilibrio modulo: penalità {round(penalty * 100)}%"
+            if len(selected) == 11 else "Seleziona esattamente undici giocatori."
+        )
+        self.feedback.color = (
+            (0.2, 0.78, 0.35, 1) if penalty == 0 and len(selected) == 11
+            else (0.95, 0.55, 0.20, 1)
+        )
+
+    def _auto_select(self, _btn):
+        team = self.app.user_team
+        if not team:
+            return
+        team.clear_manual_lineup()
+        self.selected_names = [player.name for player in team.get_starters()]
+        self._render_players()
+
+    def _save_lineup(self, _btn):
+        team = self.app.user_team
+        if not team:
+            return
+        team.formation = self.formation_spinner.text
+        ok, message = team.set_manual_lineup(self.selected_names)
+        self.feedback.text = ("✅ " if ok else "❌ ") + message
+        self.feedback.color = (
+            (0.2, 0.78, 0.35, 1) if ok else (0.86, 0.2, 0.2, 1)
+        )
+        if ok:
+            self.app.save_game()
 
 
 # ── Partita ─────────────────────────────────────────────────────
