@@ -128,3 +128,61 @@ def test_contract_renewal_accepts_credible_offer():
     assert player.contract_years == 4
     assert player.wage == 8
     assert player.happiness == 65
+
+
+def test_market_value_rewards_potential_and_contract_security():
+    from src.season import player_price
+
+    prospect = make_player(age=20, potential=92, contract_years=4)
+    veteran = make_player(age=33, potential=70, contract_years=1)
+    assert player_price(prospect) > player_price(veteran)
+
+
+def test_market_value_reflects_recent_form():
+    from src.season import player_price
+
+    in_form = make_player(form=90)
+    out_of_form = make_player(form=20)
+    assert player_price(in_form) > player_price(out_of_form)
+
+
+def test_transfer_offer_rejects_low_fee():
+    from src.season import evaluate_transfer_offer, player_price
+
+    player = make_player()
+    accepted, message = evaluate_transfer_offer(
+        player, int(player_price(player) * 0.70), wage=10, years=3,
+    )
+    assert accepted is False
+    assert "troppo bassa" in message
+
+
+def test_transfer_offer_rejects_low_wage():
+    from src.season import evaluate_transfer_offer, player_price
+
+    player = make_player(squad_role="Chiave")
+    accepted, message = evaluate_transfer_offer(
+        player, player_price(player), wage=1, years=3, squad_role="Chiave",
+    )
+    assert accepted is False
+    assert "richiede almeno" in message
+
+
+def test_transfer_offer_accepts_balanced_proposal():
+    from src.season import evaluate_transfer_offer, minimum_wage, player_price
+
+    player = make_player()
+    wage = minimum_wage(player, "Titolare")
+    accepted, message = evaluate_transfer_offer(
+        player, player_price(player), wage=wage, years=3, squad_role="Titolare",
+    )
+    assert accepted is True
+    assert message == "Accordo raggiunto."
+
+
+def test_unhappy_player_attracts_lower_offer():
+    from src.season import incoming_offer_value
+
+    happy = make_player(happiness=80)
+    unhappy = make_player(happiness=20)
+    assert incoming_offer_value(happy, 75) > incoming_offer_value(unhappy, 75)

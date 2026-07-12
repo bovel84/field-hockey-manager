@@ -384,14 +384,62 @@ def generate_free_agents(count: int = 5, rng: random.Random | None = None) -> li
 
 
 def player_price(player: Player) -> int:
-    """Calculate the transfer price of a player based on rating and age."""
-    base = player.overall_rating() * 5
-    # Younger players cost more
-    if player.age <= 22:
-        base = int(base * 1.3)
-    elif player.age > 30:
-        base = int(base * 0.7)
-    return max(10, base)
+    """Calculate a dynamic market value from ability, potential and context."""
+    rating = player.overall_rating()
+    base = rating * rating // 14
+    potential_gap = max(0, player.potential - rating)
+    base += potential_gap * 9
+    if player.age <= 21:
+        base = int(base * 1.35)
+    elif player.age <= 25:
+        base = int(base * 1.15)
+    elif player.age >= 32:
+        base = int(base * 0.62)
+    elif player.age >= 29:
+        base = int(base * 0.82)
+    form_factor = 0.90 + max(0, min(100, player.form)) / 500.0
+    contract_factor = 0.72 + min(5, max(0, player.contract_years)) * 0.09
+    value = int(base * form_factor * contract_factor)
+    return max(10, value)
+
+
+def minimum_wage(player: Player, squad_role: str = "Rotazione") -> int:
+    """Return the minimum credible wage for a contract proposal."""
+    base = max(1, player.overall_rating() // 28)
+    role_bonus = {"Chiave": 3, "Titolare": 2, "Rotazione": 0, "Prospetto": 0}
+    return base + role_bonus.get(squad_role, 0)
+
+
+def evaluate_transfer_offer(
+    player: Player,
+    fee: int,
+    wage: int,
+    years: int,
+    squad_role: str = "Rotazione",
+) -> tuple[bool, str]:
+    """Evaluate a deterministic transfer proposal with useful feedback."""
+    if years < 1 or years > 5:
+        return False, "Durata contrattuale non valida."
+    asking_fee = player_price(player)
+    if fee < int(asking_fee * 0.90):
+        return False, "Offerta al club troppo bassa."
+    required_wage = minimum_wage(player, squad_role)
+    if wage < required_wage:
+        return False, f"Il giocatore richiede almeno {required_wage}."
+    if player.age >= 31 and years > 3:
+        return False, "Il giocatore preferisce un contratto più breve."
+    return True, "Accordo raggiunto."
+
+
+def incoming_offer_value(player: Player, interest: int = 75) -> int:
+    """Generate a credible external-club offer from an interest score."""
+    interest = max(50, min(100, interest))
+    multiplier = 0.72 + (interest - 50) * 0.008
+    if player.happiness < 35:
+        multiplier -= 0.08
+    if player.form > 75:
+        multiplier += 0.08
+    return max(10, int(player_price(player) * multiplier))
 
 
 # ---------------------------------------------------------------------
