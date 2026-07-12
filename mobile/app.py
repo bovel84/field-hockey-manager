@@ -586,6 +586,16 @@ class FieldHockeyManagerApp(App):
             player.happiness = max(0, player.happiness - 2)
             return False, message
 
+        source_team = next(
+            (
+                other for other in self.teams
+                if other is not team and player in other.players
+            ),
+            None,
+        )
+        if source_team:
+            source_team.players.remove(player)
+            source_team.budget += fee
         player.wage = wage
         player.contract_years = years
         player.squad_role = squad_role
@@ -632,6 +642,29 @@ class FieldHockeyManagerApp(App):
         self.career_news = self.career_news[:6]
         self.save_game()
         return True, "Offerta accettata.", fee
+
+    def get_transfer_targets(self) -> list[Player]:
+        """Return free agents plus realistic targets from AI-controlled clubs."""
+        targets = list(self.free_agents)
+        for team in self.teams:
+            if team is self.user_team or len(team.players) <= 12:
+                continue
+            available = sorted(
+                team.players,
+                key=lambda player: (
+                    player.squad_role == "Chiave",
+                    -player.happiness,
+                    player.contract_years,
+                ),
+            )
+            targets.extend(available[:2])
+        return targets
+
+    def get_player_club(self, player: Player) -> str:
+        for team in self.teams:
+            if player in team.players:
+                return team.name
+        return "Svincolato"
 
     def get_player_price(self, player: Player) -> int:
         return player_price(player)
