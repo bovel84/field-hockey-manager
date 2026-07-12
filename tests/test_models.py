@@ -50,18 +50,18 @@ class TestPlayer:
         assert "Attacco" in s or "ATTACK" in s
 
     def test_effective_rating_normal_morale(self):
-        p = Player(name="Test", position=Position.MIDFIELD, passing=80, shooting=70, defense=70, speed=75, stamina=80, morale=50)
+        p = Player(name="Test", position=Position.MIDFIELD, passing=80, shooting=70, defense=70, speed=75, stamina=80, morale=50, happiness=50)
         assert p.effective_rating() == p.overall_rating()
 
     def test_effective_rating_high_morale(self):
-        p = Player(name="Test", position=Position.MIDFIELD, passing=80, shooting=70, defense=70, speed=75, stamina=80, morale=90)
+        p = Player(name="Test", position=Position.MIDFIELD, passing=80, shooting=70, defense=70, speed=75, stamina=80, morale=90, happiness=50)
         eff = p.effective_rating()
         base = p.overall_rating()
         assert eff == int(round(base * 1.05))
         assert eff > base
 
     def test_effective_rating_low_morale(self):
-        p = Player(name="Test", position=Position.MIDFIELD, passing=80, shooting=70, defense=70, speed=75, stamina=80, morale=20)
+        p = Player(name="Test", position=Position.MIDFIELD, passing=80, shooting=70, defense=70, speed=75, stamina=80, morale=20, happiness=50)
         eff = p.effective_rating()
         base = p.overall_rating()
         assert eff == int(round(base * 0.90))

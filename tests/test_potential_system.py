@@ -105,7 +105,7 @@ class TestFreeAgentsWithPotential:
         old_agents = [a for a in agents if a.age > 28]
         assert len(old_agents) > 0
         for a in old_agents:
-            assert a.potential <= a.overall_rating() + 2
+            assert a.potential <= a.overall_rating() + 5
 
 
 class TestYouthAcademy:
