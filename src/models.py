@@ -39,6 +39,7 @@ class Player:
     morale: int = 50
     injured: bool = False
     injury_duration: int = 0  # matches remaining
+    potential: int = 99  # Maximum reachable rating (for growth system)
 
     def overall_rating(self) -> int:
         """Calculate overall rating using position-specific weights."""
@@ -79,6 +80,10 @@ class Player:
         """Adjust morale by delta, clamped to [0, 100]."""
         self.morale = max(0, min(100, self.morale + delta))
 
+    def show_potential(self) -> bool:
+        """Return True if potential should be displayed (only for under-23 players)."""
+        return self.age < 23
+
     def __str__(self) -> str:
         inj = " 🔴" if self.injured else ""
         return f"{self.name} [{self.position.value}] OVR:{self.overall_rating()} G:{self.goals} A:{self.appearances} Età:{self.age} Mor:{self.morale}{inj}"
@@ -99,6 +104,8 @@ class Team:
     budget: int = 500
     formation: str = "4-3-3"
     intensity: str = "Bilanciata"
+    prestige: int = 0  # Prestige from cup wins and playoff results
+    youth_players: list[Player] = field(default_factory=list)  # Youth academy prospects
 
     def team_rating(self) -> int:
         """Average rating of the 11 starters (using effective_rating)."""
@@ -136,7 +143,7 @@ class Team:
         return starters[:11]
 
     def __str__(self) -> str:
-        return f"{self.name} — Rating:{self.team_rating()} Pts:{self.points} W:{self.wins} D:{self.draws} L:{self.losses} GF:{self.goals_for} GA:{self.goals_against}"
+        return f"{self.name} — Rating:{self.team_rating()} Pts:{self.points} W:{self.wins} D:{self.draws} L:{self.losses} GF:{self.goals_for} GA:{self.goals_against} Pr:{self.prestige}"
 
 
 @dataclass

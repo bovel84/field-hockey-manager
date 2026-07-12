@@ -1,9 +1,11 @@
 """Season management: calendar generation, standings, and training."""
 from __future__ import annotations
+import math
 import random
 from dataclasses import dataclass, field
 from itertools import combinations
 from .models import Match, Team, Player, Position
+from .simulation import simulate_match
 
 
 def generate_calendar(teams: list[Team], user_team_index: int = 0) -> list[dict]:
@@ -136,6 +138,8 @@ def train_player(player: Player, attribute: str, rng: random.Random | None = Non
     - 23-30 years: 60% chance +1, 10% chance +2, 30% chance 0
     - >30 years: 50% chance +1, 50% chance 0
 
+    Training cannot raise an attribute above the player's potential.
+
     Returns the amount improved (0, 1, or 2).
     """
     if rng is None:
@@ -160,7 +164,9 @@ def train_player(player: Player, attribute: str, rng: random.Random | None = Non
         gain = 1 if rng.random() < 0.50 else 0
 
     current = getattr(player, attribute)
-    new_val = min(99, current + gain)
+    # Cap at player's potential — cannot exceed it through training
+    max_val = min(99, player.potential)
+    new_val = min(max_val, current + gain)
     setattr(player, attribute, new_val)
     return new_val - current
 
@@ -197,7 +203,12 @@ _LAST_NAMES = [
 
 
 def generate_free_agents(count: int = 5, rng: random.Random | None = None) -> list[Player]:
-    """Generate random free agents for the transfer market."""
+    """Generate random free agents for the transfer market.
+
+    Each free agent gets a potential value: for young players (<=22),
+    potential is higher than their current rating, representing room to grow.
+    For older players, potential is close to their current rating.
+    """
     if rng is None:
         rng = random.Random()
     positions = list(Position)
@@ -206,6 +217,14 @@ def generate_free_agents(count: int = 5, rng: random.Random | None = None) -> li
         name = f"{rng.choice(_FIRST_NAMES)} {rng.choice(_LAST_NAMES)}"
         pos = rng.choice(positions)
         base_rating = rng.randint(55, 88)
+        age = rng.randint(16, 35)
+        # Young players get higher potential, older ones get potential close to current
+        if age <= 22:
+            potential = min(99, base_rating + rng.randint(5, 15))
+        elif age < 28:
+            potential = min(99, base_rating + rng.randint(0, 5))
+        else:
+            potential = min(99, base_rating + rng.randint(0, 2))
         agent = Player(
             name=name,
             position=pos,
@@ -214,8 +233,9 @@ def generate_free_agents(count: int = 5, rng: random.Random | None = None) -> li
             defense=base_rating + rng.randint(-5, 5),
             speed=base_rating + rng.randint(-5, 5),
             stamina=base_rating + rng.randint(-5, 5),
-            age=rng.randint(16, 35),
+            age=age,
             morale=50,
+            potential=potential,
         )
         agents.append(agent)
     return agents
@@ -230,3 +250,296 @@ def player_price(player: Player) -> int:
     elif player.age > 30:
         base = int(base * 0.7)
     return max(10, base)
+
+
+# ---------------------------------------------------------------------
+# Youth Academy
+# ---------------------------------------------------------------------
+
+def generate_youth_prospects(team: Team, rng: random.Random | None = None) -> list[Player]:
+    """Generate 1-2 youth prospects for a team's academy.
+
+    Each prospect is 16-18 years old with rating 40-60 and high potential
+    (70-95). These players can be promoted to the first team or left
+    in the academy for development.
+
+    Args:
+        team: The team generating youth prospects (used for prestige-based bonuses).
+        rng: Optional random number generator for deterministic tests.
+    Returns:
+        List of 1-2 young Player objects.
+    """
+    if rng is None:
+        rng = random.Random()
+    count = rng.randint(1, 2)
+    positions = list(Position)
+    prospects = []
+    for _ in range(count):
+        name = f"{rng.choice(_FIRST_NAMES)} {rng.choice(_LAST_NAMES)}"
+        pos = rng.choice(positions)
+        base_rating = rng.randint(40, 60)
+        # High potential: 70-95, scaled by team prestige
+        prestige_bonus = min(10, team.prestige // 10)
+        potential = min(95, rng.randint(70, 85) + prestige_bonus)
+        prospect = Player(
+            name=name,
+            position=pos,
+            passing=base_rating + rng.randint(-3, 3),
+            shooting=base_rating + rng.randint(-3, 3),
+            defense=base_rating + rng.randint(-3, 3),
+            speed=base_rating + rng.randint(-3, 3),
+            stamina=base_rating + rng.randint(-3, 3),
+            age=rng.randint(16, 18),
+            morale=60,
+            potential=potential,
+        )
+        prospects.append(prospect)
+    return prospects
+
+
+def promote_youth_player(team: Team, prospect: Player) -> bool:
+    """Promote a youth prospect to the first team.
+
+    Moves a player from the team's youth academy (youth_players list)
+    to the main squad (players list).
+
+    Args:
+        team: The team promoting the player.
+        prospect: The youth player to promote.
+    Returns:
+        True if promotion was successful, False if player not found in youth_players.
+    """
+    if prospect not in team.youth_players:
+        return False
+    team.youth_players.remove(prospect)
+    team.players.append(prospect)
+    return True
+
+
+# ---------------------------------------------------------------------
+# Playoff system (top 4 teams, semifinals + final)
+# ---------------------------------------------------------------------
+
+@dataclass
+class PlayoffBracket:
+    """Bracket for the championship playoff."""
+    semifinal1: Match
+    semifinal2: Match
+    final: Match | None = None
+    winner: Team | None = None
+
+
+def generate_playoff_bracket(teams: list[Team], standings: Standings, rng: random.Random | None = None) -> PlayoffBracket:
+    """Generate a playoff bracket for the top 4 teams.
+
+    Seedings: 1st vs 4th, 2nd vs 3rd (single-leg semifinals).
+    The final is also single-leg.
+
+    Args:
+        teams: All teams in the league.
+        standings: Final standings after the regular season.
+        rng: Optional RNG for deterministic bracket generation.
+    Returns:
+        A PlayoffBracket with semifinal matches set up.
+    """
+    if rng is None:
+        rng = random.Random()
+    ranking = standings.get_ranking()
+    if len(ranking) < 4:
+        raise ValueError("Need at least 4 teams for playoff bracket")
+
+    # Map team names to Team objects
+    team_map = {t.name: t for t in teams}
+    top4_names = [r["team_name"] for r in ranking[:4]]
+    top4_teams = [team_map[name] for name in top4_names if name in team_map]
+    if len(top4_teams) < 4:
+        raise ValueError("Could not find all top 4 teams")
+
+    # Semifinals: 1st vs 4th, 2nd vs 3rd
+    sf1 = Match(home_team=top4_teams[0], away_team=top4_teams[3])
+    sf2 = Match(home_team=top4_teams[1], away_team=top4_teams[2])
+    return PlayoffBracket(semifinal1=sf1, semifinal2=sf2)
+
+
+def simulate_playoff(bracket: PlayoffBracket, seed: int = 0) -> Team:
+    """Simulate a playoff bracket and return the winner.
+
+    Semifinals and final are single-leg matches. The higher-seeded team
+    gets home advantage.
+
+    Args:
+        bracket: A PlayoffBracket with semifinals set up.
+        seed: Random seed for deterministic simulation.
+    Returns:
+        The winning Team.
+    """
+    # Simulate semifinal 1
+    sf1 = simulate_match(bracket.semifinal1.home_team, bracket.semifinal1.away_team,
+                         seed=seed)
+    bracket.semifinal1.home_score = sf1.home_score
+    bracket.semifinal1.away_score = sf1.away_score
+    bracket.semifinal1.played = True
+    bracket.semifinal1.events = sf1.events
+    sf1_winner = bracket.semifinal1.home_team if sf1.home_score >= sf1.away_score else bracket.semifinal1.away_team
+    # In case of draw, home team advances (higher seed advantage)
+
+    # Simulate semifinal 2
+    sf2 = simulate_match(bracket.semifinal2.home_team, bracket.semifinal2.away_team,
+                         seed=seed + 1)
+    bracket.semifinal2.home_score = sf2.home_score
+    bracket.semifinal2.away_score = sf2.away_score
+    bracket.semifinal2.played = True
+    bracket.semifinal2.events = sf2.events
+    sf2_winner = bracket.semifinal2.home_team if sf2.home_score >= sf2.away_score else bracket.semifinal2.away_team
+
+    # Simulate final
+    final = Match(home_team=sf1_winner, away_team=sf2_winner)
+    final_result = simulate_match(sf1_winner, sf2_winner, seed=seed + 2)
+    final.home_score = final_result.home_score
+    final.away_score = final_result.away_score
+    final.played = True
+    final.events = final_result.events
+    bracket.final = final
+
+    # Determine winner (home team = higher seed, wins ties)
+    if final.home_score >= final.away_score:
+        bracket.winner = sf1_winner
+    else:
+        bracket.winner = sf2_winner
+    return bracket.winner
+
+
+# ---------------------------------------------------------------------
+# Coppa Nazionale (knockout cup)
+# ---------------------------------------------------------------------
+
+@dataclass
+class CupBracket:
+    """Bracket for the Coppa Nazionale (single-elimination knockout cup)."""
+    rounds: list[list[Match]] = field(default_factory=list)  # Each round is a list of matches
+    winner: Team | None = None
+
+
+def generate_cup_bracket(teams: list[Team], rng: random.Random | None = None) -> CupBracket:
+    """Generate a random knockout bracket for the Coppa Nazionale.
+
+   All teams are seeded randomly (single-elimination, single-leg matches).
+   With 6 teams, the bracket has: 2 teams get a bye to semifinals,
+   4 teams play in the quarterfinals.
+
+    Args:
+        teams: All participating teams (minimum 2).
+        rng: Optional RNG for deterministic draws.
+    Returns:
+       A CupBracket with all rounds set up (matches not yet played).
+    """
+    if rng is None:
+        rng = random.Random()
+    if len(teams) < 2:
+        raise ValueError("Need at least 2 teams for a cup bracket")
+
+    shuffled = list(teams)
+    rng.shuffle(shuffled)
+    n = len(shuffled)
+
+    # Next power of 2 >= n. Pad with None (bye) to fill the bracket.
+    bracket_size = 2 ** math.ceil(math.log2(n)) if n > 1 else 2
+    slots: list[Team | None] = list(shuffled) + [None] * (bracket_size - n)
+
+    # Build rounds: each round halves the field.
+    # Round 1 has all teams (some matches are byes with away=None).
+    # Subsequent rounds have placeholder None that simulate_cup fills in.
+    bracket = CupBracket()
+    current = slots[:]
+
+    while len(current) > 1:
+        round_matches: list[Match] = []
+        next_round: list[Team | None] = []
+        for i in range(0, len(current), 2):
+            home = current[i]
+            away = current[i + 1] if i + 1 < len(current) else None
+            m = Match(home_team=home, away_team=away)
+            round_matches.append(m)
+            next_round.append(None)  # placeholder for winner
+        bracket.rounds.append(round_matches)
+        current = next_round
+
+    return bracket
+
+
+def simulate_cup(bracket: CupBracket, seed: int = 0) -> Team:
+    """Simulate the entire Coppa Nazionale bracket.
+
+    Each match is single-leg. Home team wins ties (random draw advantage).
+    The winner receives +200 budget and +10 prestige.
+
+    Args:
+       bracket: A CupBracket with rounds set up.
+        seed: Random seed for deterministic simulation.
+    Returns:
+        The winning Team.
+    """
+    current_seed = seed
+    if bracket.winner is not None:
+        # Already simulated — prevent double awards (m10)
+        return bracket.winner
+
+    current_winners: list[Team | None] = []
+
+    for round_idx, round_matches in enumerate(bracket.rounds):
+        next_winners: list[Team | None] = []
+        match_idx = 0
+
+        for m in round_matches:
+            home = m.home_team
+            away = m.away_team
+
+            # Fill placeholders from previous round winners
+            if home is None and round_idx > 0:
+                home = current_winners[match_idx * 2] if match_idx * 2 < len(current_winners) else None
+            if away is None and round_idx > 0:
+                away = current_winners[match_idx * 2 + 1] if match_idx * 2 + 1 < len(current_winners) else None
+
+            # Bye match: home advances automatically
+            if away is None and home is not None:
+                m.home_score = 1
+                m.away_score = 0
+                m.played = True
+                next_winners.append(home)
+                match_idx += 1
+                continue
+            if home is None and away is not None:
+                m.home_score = 0
+                m.away_score = 1
+                m.played = True
+                next_winners.append(away)
+                match_idx += 1
+                continue
+            if home is None and away is None:
+                match_idx += 1
+                continue
+
+            # Normal match
+            result = simulate_match(home, away, seed=current_seed)
+            current_seed += 1
+            m.home_score = result.home_score
+            m.away_score = result.away_score
+            m.played = True
+            m.events = result.events
+            winner = home if result.home_score >= result.away_score else away
+            next_winners.append(winner)
+            match_idx += 1
+
+        current_winners = next_winners
+
+    if current_winners and len(current_winners) >= 1:
+        bracket.winner = current_winners[0]
+    else:
+        bracket.winner = None
+
+    # Award prizes to winner
+    if bracket.winner:
+        bracket.winner.budget += 200
+        bracket.winner.prestige += 10
+
+    return bracket.winner

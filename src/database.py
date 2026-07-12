@@ -31,7 +31,8 @@ class Database:
                     losses       INTEGER DEFAULT 0,
                     budget       INTEGER DEFAULT 500,
                     formation    TEXT DEFAULT '4-3-3',
-                    intensity    TEXT DEFAULT 'Bilanciata'
+                    intensity    TEXT DEFAULT 'Bilanciata',
+                    prestige     INTEGER DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS players (
@@ -50,6 +51,8 @@ class Database:
                     morale            INTEGER DEFAULT 50,
                     injured           INTEGER DEFAULT 0,
                     injury_duration   INTEGER DEFAULT 0,
+                    potential         INTEGER DEFAULT 99,
+                    is_youth          INTEGER DEFAULT 0,
                     FOREIGN KEY (team_name) REFERENCES teams(name)
                 );
 
@@ -79,7 +82,28 @@ class Database:
                     value TEXT
                 );
             """)
+            # Migration: add columns to existing databases (m9)
+            self._migrate(conn)
             conn.commit()
+
+    def _migrate(self, conn: sqlite3.Connection) -> None:
+        """Add missing columns to existing databases (backward compat)."""
+        # Check players table columns
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(players)")
+        existing_cols = {row[1] for row in cursor.fetchall()}
+        migrations = {
+            "potential": "ALTER TABLE players ADD COLUMN potential INTEGER DEFAULT 99",
+            "is_youth": "ALTER TABLE players ADD COLUMN is_youth INTEGER DEFAULT 0",
+        }
+        for col, sql in migrations.items():
+            if col not in existing_cols:
+                conn.execute(sql)
+        # Check teams table for prestige
+        cursor.execute("PRAGMA table_info(teams)")
+        existing_team_cols = {row[1] for row in cursor.fetchall()}
+        if "prestige" not in existing_team_cols:
+            conn.execute("ALTER TABLE teams ADD COLUMN prestige INTEGER DEFAULT 0")
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self.db_path)
@@ -121,10 +145,10 @@ class Database:
         """Insert or replace a team and its players."""
         with self._connect() as conn:
             conn.execute(
-                """INSERT OR REPLACE INTO teams (name, points, goals_for, goals_against, wins, draws, losses, budget, formation, intensity)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT OR REPLACE INTO teams (name, points, goals_for, goals_against, wins, draws, losses, budget, formation, intensity, prestige)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (team.name, team.points, team.goals_for, team.goals_against,
-                 team.wins, team.draws, team.losses, team.budget, team.formation, team.intensity),
+                 team.wins, team.draws, team.losses, team.budget, team.formation, team.intensity, team.prestige),
             )
             # Delete old players for this team
             conn.execute("DELETE FROM players WHERE team_name = ?", (team.name,))
@@ -132,11 +156,24 @@ class Database:
                 conn.execute(
                     """INSERT INTO players
                        (team_name, name, position, passing, shooting, defense, speed, stamina,
-                        goals, appearances, age, morale, injured, injury_duration)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        goals, appearances, age, morale, injured, injury_duration, potential, is_youth)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (team.name, p.name, p.position.value, p.passing, p.shooting,
                      p.defense, p.speed, p.stamina, p.goals, p.appearances,
-                     p.age, p.morale, 1 if p.injured else 0, p.injury_duration),
+                     p.age, p.morale, 1 if p.injured else 0, p.injury_duration,
+                     p.potential, 0),
+                )
+            # Save youth players with is_youth=1
+            for p in team.youth_players:
+                conn.execute(
+                    """INSERT INTO players
+                       (team_name, name, position, passing, shooting, defense, speed, stamina,
+                        goals, appearances, age, morale, injured, injury_duration, potential, is_youth)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (team.name, p.name, p.position.value, p.passing, p.shooting,
+                     p.defense, p.speed, p.stamina, p.goals, p.appearances,
+                     p.age, p.morale, 1 if p.injured else 0, p.injury_duration,
+                     p.potential, 1),
                 )
             conn.commit()
 
@@ -145,7 +182,7 @@ class Database:
         with self._connect() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT name, points, goals_for, goals_against, wins, draws, losses, budget, formation, intensity "
+                "SELECT name, points, goals_for, goals_against, wins, draws, losses, budget, formation, intensity, prestige "
                 "FROM teams WHERE name = ?",
                 (name,),
             )
@@ -154,14 +191,15 @@ class Database:
                 return None
             cursor.execute(
                 """SELECT name, position, passing, shooting, defense, speed, stamina,
-                          goals, appearances, age, morale, injured, injury_duration
+                          goals, appearances, age, morale, injured, injury_duration, potential, is_youth
                    FROM players WHERE team_name = ?""",
                 (name,),
             )
             prows = cursor.fetchall()
         players = []
+        youth_players = []
         for prow in prows:
-            players.append(Player(
+            p = Player(
                 name=prow[0],
                 position=Position(prow[1]),
                 passing=prow[2],
@@ -175,7 +213,12 @@ class Database:
                 morale=prow[10],
                 injured=bool(prow[11]),
                 injury_duration=prow[12],
-            ))
+                potential=prow[13],
+            )
+            if prow[14]:  # is_youth
+                youth_players.append(p)
+            else:
+                players.append(p)
         return Team(
             name=row[0],
             players=players,
@@ -188,6 +231,8 @@ class Database:
             budget=row[7],
             formation=row[8],
             intensity=row[9],
+            prestige=row[10] if len(row) > 10 else 0,
+            youth_players=youth_players,
         )
 
     def load_all_teams(self) -> list[Team]:

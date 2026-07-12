@@ -28,6 +28,8 @@ def simulate_match(
     home_intensity: str = "Bilanciata",
     away_formation: str = "4-3-3",
     away_intensity: str = "Bilanciata",
+    home_subs: list[dict] | None = None,
+    away_subs: list[dict] | None = None,
 ) -> Match:
     """
     Simulate a hockey match between two teams.
@@ -37,9 +39,15 @@ def simulate_match(
     - Add home advantage (+5).
     - Apply formation and intensity modifiers.
     - For each of 4 quarters, compute expected goals based on rating difference.
+    - Apply stamina decay in quarters 3 and 4: tired starters lose rating.
+    - Process substitutions: each team can make up to 3 subs, replacing tired players.
     - Use a Poisson-like random draw to determine actual goals.
     - Generate goal events with scorer and minute.
     - Check for injuries (5-10% chance per match for a random player).
+
+    Substitution format:
+        home_subs/away_subs is a list of dicts: {"quarter": int, "out": str, "in": str}
+        where "out" and "in" are player names. Max 3 subs per team.
     """
     rng = random.Random(seed)
 
@@ -67,16 +75,56 @@ def simulate_match(
     home_factor *= home_int
     away_factor *= away_int
 
+    # --- Substitution tracking ---
+    home_sub_events = home_subs or []
+    away_sub_events = away_subs or []
+    # Clamp to max 3 subs per team
+    home_sub_events = home_sub_events[:3]
+    away_sub_events = away_sub_events[:3]
+
     match = Match(home_team=home, away_team=away)
     match.events = []
 
     home_score = 0
     away_score = 0
 
+    # Track active starters for each team (for stamina decay and subs)
+    home_active = list(home.get_starters())
+    away_active = list(away.get_starters())
+
     for quarter in range(1, 5):
+        # --- Stamina decay: tired starters lose rating in quarters 3 and 4 ---
+        home_decay = _stamina_decay(home_active, quarter)
+        away_decay = _stamina_decay(away_active, quarter)
+
+        # Apply decay to goal factors for this quarter
+        quarter_home_factor = home_factor * (1.0 - home_decay)
+        quarter_away_factor = away_factor * (1.0 - away_decay)
+
+        # --- Process substitutions for this quarter ---
+        home_subs_count = len([e for e in match.events if e.get("type") == "substitution" and e.get("team") == "home"])
+        for sub in home_sub_events:
+            if sub.get("quarter") == quarter and home_subs_count < 3:
+                sub_event = _make_substitution(home, sub, home_active, "home")
+                if sub_event:
+                    match.events.append(sub_event)
+                    home_subs_count += 1
+                    home_decay = _stamina_decay(home_active, quarter)
+                    quarter_home_factor = home_factor * (1.0 - home_decay)
+
+        away_subs_count = len([e for e in match.events if e.get("type") == "substitution" and e.get("team") == "away"])
+        for sub in away_sub_events:
+            if sub.get("quarter") == quarter and away_subs_count < 3:
+                sub_event = _make_substitution(away, sub, away_active, "away")
+                if sub_event:
+                    match.events.append(sub_event)
+                    away_subs_count += 1
+                    away_decay = _stamina_decay(away_active, quarter)
+                    quarter_away_factor = away_factor * (1.0 - away_decay)
+
         # Goals in this quarter — Poisson-like via random samples
-        quarter_home_goals = _poisson_sample(home_factor, rng)
-        quarter_away_goals = _poisson_sample(away_factor, rng)
+        quarter_home_goals = _poisson_sample(quarter_home_factor, rng)
+        quarter_away_goals = _poisson_sample(quarter_away_factor, rng)
 
         for _ in range(quarter_home_goals):
             minute = rng.randint((quarter - 1) * 15 + 1, quarter * 15)
@@ -174,3 +222,72 @@ def _pick_scorer(team: Team, rng: random.Random) -> Player | None:
     if not weighted:
         return starters[0]
     return rng.choice(weighted)
+
+
+def _stamina_decay(active_players: list[Player], quarter: int) -> float:
+    """Calculate team-level stamina decay factor for a given quarter.
+
+    Tired starters (low stamina) lose more rating in later quarters.
+    Returns a float between 0.0 and 0.15 representing the team-wide
+    rating reduction factor for this quarter.
+
+    - Quarters 1-2: no decay
+    - Quarters 3-4: decay based on average stamina of active players
+    """
+    if quarter <= 2:
+        return 0.0
+    if not active_players:
+        return 0.0
+    avg_stamina = sum(p.stamina for p in active_players) / len(active_players)
+    # Lower stamina = more decay. Map stamina 50→0.10, stamina 90→0.02
+    decay = max(0.0, min(0.15, (90 - avg_stamina) * 0.0025))
+    return decay
+
+
+def _make_substitution(team: Team, sub: dict, active_list: list[Player], side: str = "home") -> dict | None:
+    """Process a substitution request during a match.
+
+    Replaces a player in the active list with a bench player.
+    Args:
+        team: The team making the substitution.
+        sub: Dict with keys "out" (player name to remove) and "in" (player name to add).
+        active_list: Mutable list of currently active players (modified in place).
+        side: "home" or "away" — which team is making the sub.
+    Returns:
+        Event dict if substitution was successful, None otherwise.
+    """
+    out_name = sub.get("out", "")
+    in_name = sub.get("in", "")
+    quarter = sub.get("quarter", 1)
+
+    # Find the player to substitute out
+    out_player = None
+    for p in active_list:
+        if p.name == out_name:
+            out_player = p
+            break
+    if out_player is None:
+        return None
+
+    # Find the replacement from bench (not in active list, not injured)
+    active_ids = {id(p) for p in active_list}
+    replacement = None
+    for p in team.players:
+        if id(p) not in active_ids and p.can_play() and p.name == in_name:
+            replacement = p
+            break
+    if replacement is None:
+        return None
+
+    # Perform the substitution
+    idx = active_list.index(out_player)
+    active_list[idx] = replacement
+
+    return {
+        "type": "substitution",
+        "quarter": quarter,
+        "minute": quarter * 15 - 1,
+        "team": side,
+        "out": out_name,
+        "in": in_name,
+    }
