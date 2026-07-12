@@ -52,6 +52,7 @@ class Database:
                     morale            INTEGER DEFAULT 50,
                     injured           INTEGER DEFAULT 0,
                     injury_duration   INTEGER DEFAULT 0,
+                    injury_type       TEXT DEFAULT '',
                     potential         INTEGER DEFAULT 99,
                     condition          INTEGER DEFAULT 100,
                     form               INTEGER DEFAULT 50,
@@ -108,6 +109,7 @@ class Database:
             "condition": "ALTER TABLE players ADD COLUMN condition INTEGER DEFAULT 100",
             "form": "ALTER TABLE players ADD COLUMN form INTEGER DEFAULT 50",
             "matches_since_rest": "ALTER TABLE players ADD COLUMN matches_since_rest INTEGER DEFAULT 0",
+            "injury_type": "ALTER TABLE players ADD COLUMN injury_type TEXT DEFAULT ''",
         }
         for col, sql in migrations.items():
             if col not in existing_cols:
@@ -243,26 +245,26 @@ class Database:
                 conn.execute(
                     """INSERT INTO players
                        (team_name, name, position, passing, shooting, defense, speed, stamina,
-                        goals, appearances, age, morale, injured, injury_duration, potential,
+                        goals, appearances, age, morale, injured, injury_duration, injury_type, potential,
                         condition, form, matches_since_rest, is_youth)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (team.name, p.name, p.position.value, p.passing, p.shooting,
                      p.defense, p.speed, p.stamina, p.goals, p.appearances,
                      p.age, p.morale, 1 if p.injured else 0, p.injury_duration,
-                     p.potential, p.condition, p.form, p.matches_since_rest, 0),
+                     p.injury_type, p.potential, p.condition, p.form, p.matches_since_rest, 0),
                 )
             # Save youth players with is_youth=1
             for p in team.youth_players:
                 conn.execute(
                     """INSERT INTO players
                        (team_name, name, position, passing, shooting, defense, speed, stamina,
-                        goals, appearances, age, morale, injured, injury_duration, potential,
+                        goals, appearances, age, morale, injured, injury_duration, injury_type, potential,
                         condition, form, matches_since_rest, is_youth)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (team.name, p.name, p.position.value, p.passing, p.shooting,
                      p.defense, p.speed, p.stamina, p.goals, p.appearances,
                      p.age, p.morale, 1 if p.injured else 0, p.injury_duration,
-                     p.potential, p.condition, p.form, p.matches_since_rest, 1),
+                     p.injury_type, p.potential, p.condition, p.form, p.matches_since_rest, 1),
                 )
             conn.commit()
 
@@ -280,7 +282,7 @@ class Database:
                 return None
             cursor.execute(
                 """SELECT name, position, passing, shooting, defense, speed, stamina,
-                          goals, appearances, age, morale, injured, injury_duration, potential,
+                          goals, appearances, age, morale, injured, injury_duration, injury_type, potential,
                           condition, form, matches_since_rest, is_youth
                    FROM players WHERE team_name = ?""",
                 (name,),
@@ -303,12 +305,13 @@ class Database:
                 morale=prow[10],
                 injured=bool(prow[11]),
                 injury_duration=prow[12],
-                potential=prow[13],
-                condition=prow[14],
-                form=prow[15],
-                matches_since_rest=prow[16],
+                injury_type=prow[13] or "",
+                potential=prow[14],
+                condition=prow[15],
+                form=prow[16],
+                matches_since_rest=prow[17],
             )
-            if prow[17]:  # is_youth
+            if prow[18]:  # is_youth
                 youth_players.append(p)
             else:
                 players.append(p)
