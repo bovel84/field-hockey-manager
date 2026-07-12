@@ -30,7 +30,7 @@ from src.simulation import simulate_match
 from mobile.screens import (
     MenuScreen, RosaScreen, CalendarioScreen, ClassificaScreen,
     PartitaScreen, StatisticheScreen, AllenamentiScreen, MercatoScreen,
-    CarrieraScreen, YouthAcademyScreen,
+    CarrieraScreen, YouthAcademyScreen, SaveLoadScreen,
 )
 
 Window.clearcolor = (0.102, 0.102, 0.180, 1)  # #1a1a2e
@@ -96,6 +96,7 @@ class FieldHockeyManagerApp(App):
             self.sm.add_widget(MercatoScreen(self, name="mercato"))
             self.sm.add_widget(YouthAcademyScreen(self, name="youth"))
             self.sm.add_widget(CarrieraScreen(self, name="carriera"))
+            self.sm.add_widget(SaveLoadScreen(self, name="saveload"))
             self.root_container.clear_widgets()
             self.root_container.add_widget(self.sm)
         except Exception:
@@ -418,12 +419,13 @@ class FieldHockeyManagerApp(App):
     def get_player_price(self, player: Player) -> int:
         return player_price(player)
 
-    def save_game(self):
+    def save_game(self, slot: int = 1):
+        """Save current game state to a save slot (1-3)."""
         if not self.db:
             return
         for team in self.teams:
             self.db.save_team(team)
-        self.db.save_state({
+        state = {
             "current_round": self.current_round,
             "trainings_used": self.trainings_used,
             "season_number": self.season_number,
@@ -432,4 +434,52 @@ class FieldHockeyManagerApp(App):
             "supporters": self.supporters,
             "season_objective": self.season_objective,
             "career_news": self.career_news,
-        })
+            "user_team_name": self.user_team.name if self.user_team else "—",
+            "league_name": "Serie A Élite",
+        }
+        self.db.save_state(state)
+        # Also persist to save_slots table for multi-slot save/load
+        self.db.save_game(slot, state)
+
+    def load_game_slot(self, slot: int) -> bool:
+        """Load a game from a save slot (1-3). Returns True on success."""
+        if not self.db:
+            return False
+        state = self.db.load_game(slot)
+        if state is None:
+            return False
+        # Restore teams from database
+        saved_teams = self.db.load_all_teams()
+        if saved_teams and len(saved_teams) == len(self.teams):
+            by_name = {team.name: team for team in saved_teams}
+            self.teams = [by_name.get(team.name, team) for team in self.teams]
+        user_team_name = state.get("user_team_name")
+        if user_team_name:
+            for i, t in enumerate(self.teams):
+                if t.name == user_team_name:
+                    self.user_team = t
+                    self.user_team_idx = i
+                    break
+        self.current_round = int(state.get("current_round", 0))
+        self.trainings_used = int(state.get("trainings_used", 0))
+        self.season_number = int(state.get("season_number", 1))
+        self.manager_reputation = int(state.get("manager_reputation", 50))
+        self.board_confidence = int(state.get("board_confidence", 65))
+        self.supporters = int(state.get("supporters", 1200))
+        self.season_objective = state.get("season_objective", "Qualificazione playoff")
+        self.career_news = state.get("career_news", ["Benvenuto nella tua nuova carriera da manager."])
+        self.calendar = generate_calendar(self.teams, self.user_team_idx)
+        self._played_matches_history = []
+        return True
+
+    def list_save_slots(self) -> list[dict]:
+        """Return metadata for all occupied save slots."""
+        if not self.db:
+            return []
+        return self.db.list_saves()
+
+    def delete_save_slot(self, slot: int) -> bool:
+        """Delete a save slot. Returns True if deleted."""
+        if not self.db:
+            return False
+        return self.db.delete_save(slot)

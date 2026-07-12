@@ -97,10 +97,79 @@ class MenuScreen(Screen):
         layout.add_widget(styled_button("🏋️ Allenamenti", lambda _: setattr(app.sm, 'current', 'allenamenti')))
         layout.add_widget(styled_button("💰 Mercato", lambda _: setattr(app.sm, 'current', 'mercato')))
         layout.add_widget(styled_button("🌱 Youth Academy", lambda _: setattr(app.sm, 'current', 'youth')))
-        layout.add_widget(styled_button("💾 Salva", lambda _: app.save_game()))
+        layout.add_widget(styled_button("💾 Salva / Carica", lambda _: setattr(app.sm, 'current', 'saveload')))
         layout.add_widget(styled_button("🚪 Esci", lambda _: app.stop(), bg_color=(0.5, 0.2, 0.2, 1)))
 
         self.add_widget(layout)
+
+
+# ── Save / Load ───────────────────────────────────────────────
+
+class SaveLoadScreen(Screen):
+    """Screen for managing 3 save slots."""
+
+    def __init__(self, app, **kwargs):
+        super().__init__(**kwargs)
+        self.app = app
+        make_screen_bg(self)
+        self.layout = BoxLayout(orientation="vertical", padding=16, spacing=8)
+        self.layout.add_widget(section_title("💾 Salva / Carica"))
+
+        self.scroll = ScrollView(size_hint_y=0.80)
+        self.slots_layout = BoxLayout(orientation="vertical", size_hint_y=None, spacing=10)
+        self.slots_layout.bind(minimum_height=self.slots_layout.setter("height"))
+        self.scroll.add_widget(self.slots_layout)
+        self.layout.add_widget(self.scroll)
+
+        self.layout.add_widget(styled_button("⬅️ Indietro", lambda _: setattr(app.sm, 'current', 'menu')))
+        self.add_widget(self.layout)
+
+    def on_enter(self):
+        """Refresh slot list when entering the screen."""
+        self.slots_layout.clear_widgets()
+        saves = {s["slot"]: s for s in self.app.list_save_slots()}
+
+        for slot in (1, 2, 3):
+            info = saves.get(slot)
+            box = BoxLayout(orientation="horizontal", size_hint_y=None, height=70, spacing=6)
+
+            if info:
+                label = Label(
+                    text=f"Slot {slot}: {info['team_name']} — Stagione {info['season']}\n{info['timestamp']}",
+                    font_size="13sp", color=TEXT_COLOR, halign="left", valign="middle",
+                    size_hint_x=0.50,
+                )
+                label.bind(size=lambda inst, v: setattr(inst, "text_size", (inst.width, None)))
+                box.add_widget(label)
+                box.add_widget(styled_button("💾 Salva", lambda _, s=slot: self._save_slot(s), height=40, bg_color=(0.2, 0.5, 0.8, 1)))
+                box.add_widget(styled_button("📂 Carica", lambda _, s=slot: self._load_slot(s), height=40, bg_color=(0.2, 0.7, 0.3, 1)))
+                box.add_widget(styled_button("🗑️", lambda _, s=slot: self._delete_slot(s), height=40, bg_color=(0.7, 0.2, 0.2, 1)))
+            else:
+                label = Label(
+                    text=f"Slot {slot}: <vuoto>",
+                    font_size="14sp", color=(0.5, 0.5, 0.6, 1), halign="left", valign="middle",
+                    size_hint_x=0.50,
+                )
+                label.bind(size=lambda inst, v: setattr(inst, "text_size", (inst.width, None)))
+                box.add_widget(label)
+                box.add_widget(styled_button("💾 Salva", lambda _, s=slot: self._save_slot(s), height=40))
+                # Empty slot buttons take same space for alignment
+                box.add_widget(Label(text="", size_hint_x=0.25))
+                box.add_widget(Label(text="", size_hint_x=0.10))
+
+            self.slots_layout.add_widget(box)
+
+    def _save_slot(self, slot: int):
+        self.app.save_game(slot)
+        self.on_enter()  # refresh
+
+    def _load_slot(self, slot: int):
+        if self.app.load_game_slot(slot):
+            self.app.sm.current = "menu"
+
+    def _delete_slot(self, slot: int):
+        self.app.delete_save_slot(slot)
+        self.on_enter()  # refresh
 
 
 # ── Rosa ────────────────────────────────────────────────────────
