@@ -22,10 +22,11 @@
 - **Verdetto:** APPROVATO, 2 MINOR non bloccanti (M1: PlayoffBracket.__str__, M2: simulate_cup team update)
 
 ### Task FHM-04: QA Final
-- **State:** 🔄 In Progress
+- **State:** ✅ Done — FAIL 88/100 → fixato → PASS
 - **Owner:** Tommy
-- **Artifact input:** review R2 approvata (91/100) + 203 test passanti
-- **Done quando:** QA 0-100, verdict PASS (>=90) o FAIL (<90)
+- **Artifact:** `shared/reviews/tommy-qa-final.md`
+- **Risultato:** Tommy ha trovato syntax error in screens.py:238 (virgola+virgolette extra), fixato da Zeus. 203 test passanti, import OK.
+- **Verdetto:** PASS dopo fix
 
 ### Task FHM-05: Fix raccomandati post-merge
 - **State:** ✅ Done — applicati da Zeus

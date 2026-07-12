@@ -131,6 +131,45 @@ def simulate_match(
                     away_decay = _stamina_decay(away_active, quarter)
                     quarter_away_factor = away_factor * (1.0 - away_decay)
 
+        # --- Feature: Rigori, corti angoli, cartellini verdi ---
+        # Green card check (8-10% per team per quarter)
+        home_green = _check_green_card(rng)
+        away_green = _check_green_card(rng)
+        if home_green:
+            home_green["team"] = "home"
+            match.events.append(home_green)
+            quarter_home_factor *= 0.92  # -8% attack for this quarter
+        if away_green:
+            away_green["team"] = "away"
+            match.events.append(away_green)
+            quarter_away_factor *= 0.92
+
+        # Penalty corner check (15-20% per team per quarter)
+        home_corner = _check_penalty_corner(home, away, rng, quarter, "home")
+        if home_corner:
+            match.events.append(home_corner)
+            if home_corner["type"] == "corner_goal":
+                home_score += 1
+
+        away_corner = _check_penalty_corner(away, home, rng, quarter, "away")
+        if away_corner:
+            match.events.append(away_corner)
+            if away_corner["type"] == "corner_goal":
+                away_score += 1
+
+        # Penalty stroke check (4-6% per team per quarter)
+        home_penalty = _check_penalty(home, away, rng, quarter, "home")
+        if home_penalty:
+            match.events.append(home_penalty)
+            if home_penalty["type"] == "penalty_goal":
+                home_score += 1
+
+        away_penalty = _check_penalty(away, home, rng, quarter, "away")
+        if away_penalty:
+            match.events.append(away_penalty)
+            if away_penalty["type"] == "penalty_goal":
+                away_score += 1
+
         # Goals in this quarter — Poisson-like via random samples
         quarter_home_goals = _poisson_sample(quarter_home_factor, rng)
         quarter_away_goals = _poisson_sample(quarter_away_factor, rng)
@@ -336,3 +375,88 @@ def generate_auto_subs(team: Team, active_players: list[Player] | None = None) -
             "in": bench[i].name,
         })
     return subs
+
+
+# --- Feature: Rigori, corti angoli, cartellini verdi ---
+
+def _check_green_card(rng: random.Random) -> dict | None:
+    """Check if a green card is awarded this quarter (8-10% chance).
+
+    A green card suspends a random player for 2 minutes.
+    The team plays with reduced attack for that quarter.
+    """
+    if rng.random() < 0.09:  # 8-10% chance
+        return {
+            "type": "green_card",
+            "minute": rng.randint(1, 15),
+            "duration": 2,  # 2 minute suspension
+        }
+    return None
+
+
+def _check_penalty_corner(atk: Team, def_: Team, rng: random.Random, quarter: int, side: str) -> dict | None:
+    """Check if a penalty corner is awarded this quarter (15-20% chance).
+
+    A penalty corner is the most common set piece in hockey.
+    The attacking team gets a scoring opportunity based on attack rating
+    vs defense rating of the defending team.
+    """
+    if rng.random() < 0.18:  # 15-20% chance
+        atk_rating = atk.team_rating()
+        def_rating = def_.team_rating()
+        # Scoring probability: 30-50% based on rating difference
+        prob = 0.30 + max(0.0, min(0.20, (atk_rating - def_rating) * 0.005))
+        if rng.random() < prob:
+            scorer = _pick_scorer(atk, rng)
+            return {
+                "type": "corner_goal",
+                "quarter": quarter,
+                "minute": rng.randint((quarter - 1) * 15 + 1, quarter * 15),
+                "team": side,
+                "scorer": scorer.name if scorer else "Unknown",
+            }
+        else:
+            return {
+                "type": "penalty_corner",
+                "quarter": quarter,
+                "minute": rng.randint((quarter - 1) * 15 + 1, quarter * 15),
+                "team": side,
+                "result": "missed",
+            }
+    return None
+
+
+def _check_penalty(atk: Team, def_: Team, rng: random.Random, quarter: int, side: str) -> dict | None:
+    """Check if a penalty stroke is awarded this quarter (4-6% chance).
+
+    A penalty stroke is a 1v1 against the goalkeeper.
+    The shooter has 75% base probability to score, modified by shooting vs defense.
+    """
+    if rng.random() < 0.05:  # 4-6% chance
+        # Pick best shooter
+        starters = atk.get_starters()
+        if not starters:
+            return None
+        shooter = max(starters, key=lambda p: p.shooting)
+        goalkeeper = max(def_.get_starters(), key=lambda p: p.defense) if def_.get_starters() else None
+        base_prob = 0.75
+        if goalkeeper:
+            base_prob += (shooter.shooting - goalkeeper.defense) * 0.003
+        base_prob = max(0.50, min(0.95, base_prob))
+        if rng.random() < base_prob:
+            return {
+                "type": "penalty_goal",
+                "quarter": quarter,
+                "minute": rng.randint((quarter - 1) * 15 + 1, quarter * 15),
+                "team": side,
+                "scorer": shooter.name,
+            }
+        else:
+            return {
+                "type": "penalty_missed",
+                "quarter": quarter,
+                "minute": rng.randint((quarter - 1) * 15 + 1, quarter * 15),
+                "team": side,
+                "shooter": shooter.name,
+            }
+    return None

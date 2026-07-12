@@ -78,7 +78,7 @@ class MenuScreen(Screen):
             color=ACCENT_COLOR, size_hint_y=None, height=60,
         ))
 
-        team_name = app.user_team.name if app.user_team else "—"
+        team_name = app.user_team.name if app.user_team else "-"
         layout.add_widget(Label(
             text=f"Squadra: {team_name}", font_size="16sp", color=TEXT_COLOR,
             size_hint_y=None, height=36,
@@ -135,7 +135,7 @@ class SaveLoadScreen(Screen):
 
             if info:
                 label = Label(
-                    text=f"Slot {slot}: {info['team_name']} — Stagione {info['season']}\n{info['timestamp']}",
+                    text=f"Slot {slot}: {info['team_name']} - Stagione {info['season']}\n{info['timestamp']}",
                     font_size="13sp", color=TEXT_COLOR, halign="left", valign="middle",
                     size_hint_x=0.50,
                 )
@@ -323,8 +323,8 @@ class PartitaScreen(Screen):
         self.sub_spinners: list[Spinner] = []
         for i in range(3):
             sub_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=44, spacing=4)
-            out_spin = Spinner(text="—", values=[], size_hint_x=0.5, font_size="13sp")
-            in_spin = Spinner(text="—", values=[], size_hint_x=0.5, font_size="13sp")
+            out_spin = Spinner(text="-", values=[], size_hint_x=0.5, font_size="13sp")
+            in_spin = Spinner(text="-", values=[], size_hint_x=0.5, font_size="13sp")
             self.sub_spinners.append(out_spin)
             self.sub_spinners.append(in_spin)
             sub_row.add_widget(Label(text="Out:", font_size="12sp", color=(0.86,0.2,0.2,1), size_hint_x=0.15))
@@ -361,8 +361,8 @@ class PartitaScreen(Screen):
             if team:
                 player_names = [p.name for p in team.players if p.can_play()]
                 for spin in self.sub_spinners:
-                    spin.values = ["—"] + player_names
-                    spin.text = "—"
+                    spin.values = ["-"] + player_names
+                    spin.text = "-"
         else:
             self.info_label.text = "Stagione finita! 🎉"
             self.play_btn.disabled = True
@@ -375,7 +375,7 @@ class PartitaScreen(Screen):
         for i in range(0, len(self.sub_spinners), 2):
             out_name = self.sub_spinners[i].text
             in_name = self.sub_spinners[i + 1].text
-            if out_name != "—" and in_name != "—":
+            if out_name != "-" and in_name != "-":
                 user_subs.append({"quarter": 3, "out": out_name, "in": in_name})
         match = self.app.play_next_match(
             self.formation_spinner.text,
@@ -390,7 +390,7 @@ class PartitaScreen(Screen):
         self.result_label.text = f"{match.home_team.name} {match.home_score} - {match.away_score} {match.away_team.name}"
         self.result_label.color = c
         events_text = "\n".join(
-            f"{ev.get('minute', '?')}' — {ev.get('type', '')}: {ev.get('scorer') or ev.get('player', '')}"
+            f"{ev.get('minute', '?')}' - {ev.get('type', '')}: {ev.get('scorer') or ev.get('player', '')}"
             for ev in match.events
         )
         self.events_label.text = events_text or "Nessun evento"
@@ -543,7 +543,7 @@ class MercatoScreen(Screen):
             price = self.app.get_player_price(p)
             can_afford = team.budget >= price
             btn = Button(
-                text=f"{p.name} [{p.position.value}] OVR:{p.overall_rating()} — {price} crediti",
+                text=f"{p.name} [{p.position.value}] OVR:{p.overall_rating()} - {price} crediti",
                 font_size="14sp", size_hint_y=None, height=50,
                 background_color=(0.2, 0.5, 0.2, 1) if can_afford else (0.3, 0.3, 0.3, 1),
                 color=TEXT_COLOR, disabled=not can_afford,
@@ -590,16 +590,24 @@ class CarrieraScreen(Screen):
     def on_enter(self):
         team = self.app.user_team
         budget = team.budget if team else 0
-        position = str(self.app.get_standings().index(team) + 1) if team else "—"
+        position = str(self.app.get_standings().index(team) + 1) if team else "-"
         self.summary.text = (
             f"Stagione: {self.app.season_number}\n"
-            f"Club: {team.name if team else '—'} | Posizione: {position}ª\n"
+            f"Club: {team.name if team else '—'} | Posizione: {position}a\n"
             f"Obiettivo: {self.app.season_objective}\n"
             f"Fiducia dirigenza: {self.app.board_confidence}/100\n"
             f"Reputazione manager: {self.app.manager_reputation}/100\n"
             f"Tifosi: {self.app.supporters} | Budget: {budget} crediti"
         )
-        self.news.text = "\n".join(f"• {item}" for item in self.app.career_news)
+        # Show season goals if any
+        goals_text = ""
+        if hasattr(self.app, 'season_goals') and self.app.season_goals:
+            goals_lines = []
+            for goal in self.app.season_goals:
+                status_icon = {"active": "🔄", "completed": "✅", "failed": "❌"}.get(goal["status"], "❓")
+                goals_lines.append(f"{status_icon} {goal['description']}")
+            goals_text = "\n🎯 Obiettivi stagionali:\n" + "\n".join(goals_lines) + "\n\n"
+        self.news.text = goals_text + "\n".join(f"• {item}" for item in self.app.career_news)
         self.new_season_btn.disabled = self.app.get_next_match() is not None
         self.feedback.text = ("Completa il campionato per avanzare."
                               if self.new_season_btn.disabled

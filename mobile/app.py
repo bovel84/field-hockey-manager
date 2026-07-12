@@ -183,6 +183,9 @@ class FieldHockeyManagerApp(App):
         )
         self.free_agents = generate_free_agents(8)
         self._played_matches_history = []
+        self.season_goals = state.get("season_goals", [])
+        if not self.season_goals:
+            self.season_goals = self._generate_season_goals()
 
     def get_next_match(self) -> dict | None:
         for entry in self.calendar:
@@ -318,6 +321,101 @@ class FieldHockeyManagerApp(App):
         if is_derby:
             match.events.append({"type": "derby", "teams": [user_team.name if user_team else "", opponent.name]})
 
+    def _generate_season_goals(self) -> list[dict]:
+        """Generate 2-3 dynamic season objectives based on manager reputation."""
+        import random as _rng
+        rng = _rng.Random(self.season_number * 42 + self.manager_reputation)
+        goals = []
+        # Goal 1: Position-based (always present)
+        if self.manager_reputation >= 75:
+            goals.append({
+                "id": "champion",
+                "description": "Vinci il campionato",
+                "type": "position",
+                "target": 1,
+                "reward_budget": 300,
+                "reward_reputation": 5,
+                "status": "active",
+            })
+        else:
+            goals.append({
+                "id": "top3",
+                "description": "Qualificati per i playoff (top 3)",
+                "type": "position",
+                "target": 3,
+                "reward_budget": 200,
+                "reward_reputation": 3,
+                "status": "active",
+            })
+        # Goal 2: Goals scored (varies by reputation)
+        target_goals = 20 if self.manager_reputation < 50 else 25
+        goals.append({
+            "id": "goals",
+            "description": f"Segna almeno {target_goals} gol in stagione",
+            "type": "goals_scored",
+            "target": target_goals,
+            "reward_budget": 100,
+            "reward_reputation": 2,
+            "status": "active",
+        })
+        # Goal 3: Win streak (50% chance)
+        if rng.random() < 0.5:
+            goals.append({
+                "id": "streak",
+                "description": "Non perdere più di 2 partite consecutive",
+                "type": "max_consecutive_losses",
+                "target": 2,
+                "reward_budget": 150,
+                "reward_reputation": 3,
+                "status": "active",
+            })
+        return goals
+
+    def _evaluate_season_goals(self) -> list[str]:
+        """Evaluate season goals at end of season. Returns news headlines."""
+        headlines = []
+        standings = self.get_standings()
+        user_position = standings.index(self.user_team) + 1 if self.user_team in standings else len(standings)
+        total_goals = self.user_team.goals_for if self.user_team else 0
+        # Count consecutive losses
+        max_consecutive = 0
+        current_streak = 0
+        for m in self._played_matches_history:
+            is_home = m.home_team == self.user_team
+            user_score = m.home_score if is_home else m.away_score
+            opp_score = m.away_score if is_home else m.home_score
+            if user_score < opp_score:
+                current_streak += 1
+                max_consecutive = max(max_consecutive, current_streak)
+            else:
+                current_streak = 0
+
+        for goal in self.season_goals:
+            if goal["status"] != "active":
+                continue
+            achieved = False
+            if goal["type"] == "position":
+                achieved = user_position <= goal["target"]
+            elif goal["type"] == "goals_scored":
+                achieved = total_goals >= goal["target"]
+            elif goal["type"] == "max_consecutive_losses":
+                achieved = max_consecutive <= goal["target"]
+
+            if achieved:
+                goal["status"] = "completed"
+                if self.user_team:
+                    self.user_team.budget += goal["reward_budget"]
+                self.manager_reputation = min(100, self.manager_reputation + goal["reward_reputation"])
+                self.board_confidence = min(100, self.board_confidence + 5)
+                headlines.append(f"✅ Obiettivo raggiunto: {goal['description']} (+{goal['reward_budget']} budget)")
+            else:
+                goal["status"] = "failed"
+                self.board_confidence = max(0, self.board_confidence - 5)
+                if self.user_team:
+                    self.user_team.budget = max(0, self.user_team.budget - 50)
+                headlines.append(f"❌ Obiettivo mancato: {goal['description']}")
+        return headlines
+
     def start_new_season(self) -> bool:
         """Advance the career after the current championship is complete."""
         if self.get_next_match() is not None:
@@ -384,6 +482,14 @@ class FieldHockeyManagerApp(App):
             "Vincere il campionato" if self.manager_reputation >= 75
             else "Qualificazione playoff"
         )
+        # Evaluate previous season goals
+        goal_headlines = self._evaluate_season_goals()
+        for headline in goal_headlines:
+            self.career_news.insert(0, headline)
+        # Generate new season goals
+        self.season_goals = self._generate_season_goals()
+        for goal in self.season_goals:
+            self.career_news.insert(0, f"🎯 Nuovo obiettivo: {goal['description']}")
         self.career_news.insert(0, f"Stagione {self.season_number}: budget premio +{prize}.")
         self.save_game()
         return True
@@ -436,6 +542,7 @@ class FieldHockeyManagerApp(App):
             "career_news": self.career_news,
             "user_team_name": self.user_team.name if self.user_team else "—",
             "league_name": "Serie A Élite",
+            "season_goals": self.season_goals,
         }
         self.db.save_state(state)
         # Also persist to save_slots table for multi-slot save/load
@@ -468,6 +575,7 @@ class FieldHockeyManagerApp(App):
         self.supporters = int(state.get("supporters", 1200))
         self.season_objective = state.get("season_objective", "Qualificazione playoff")
         self.career_news = state.get("career_news", ["Benvenuto nella tua nuova carriera da manager."])
+        self.season_goals = state.get("season_goals", [])
         self.calendar = generate_calendar(self.teams, self.user_team_idx)
         self._played_matches_history = []
         return True

@@ -76,7 +76,8 @@ class TestSimulateMatch:
         away = make_team("HC Roma", 80)
         m = simulate_match(home, away, seed=42)
         total_goals = m.home_score + m.away_score
-        goal_events = [e for e in m.events if e.get("type") == "goal"]
+        # Count all goal-type events (normal goals + corner goals + penalty goals)
+        goal_events = [e for e in m.events if e.get("type") in ("goal", "corner_goal", "penalty_goal")]
         assert len(goal_events) == total_goals
 
     def test_match_has_four_quarters(self):
