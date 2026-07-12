@@ -33,16 +33,16 @@ class TestAutoSubs:
     def test_auto_subs_picks_tired_starters(self):
         """Auto-subs should replace the players with lowest stamina."""
         players = [
-            Player(name="Fresh1", position=Position.ATTACK, stamina=90, shooting=80),
-            Player(name="Fresh2", position=Position.ATTACK, stamina=90, shooting=80),
-            Player(name="Tired1", position=Position.ATTACK, stamina=30, shooting=80),
-            Player(name="Tired2", position=Position.ATTACK, stamina=25, shooting=80),
-            Player(name="Bench1", position=Position.ATTACK, stamina=85, shooting=75),
-            Player(name="Bench2", position=Position.ATTACK, stamina=85, shooting=75),
-            Player(name="Bench3", position=Position.ATTACK, stamina=85, shooting=75),
+            Player(name="Fresh1", position=Position.ATTACK, stamina=90, shooting=80, condition=90),
+            Player(name="Fresh2", position=Position.ATTACK, stamina=90, shooting=80, condition=90),
+            Player(name="Tired1", position=Position.ATTACK, stamina=30, shooting=80, condition=25),
+            Player(name="Tired2", position=Position.ATTACK, stamina=25, shooting=80, condition=20),
+            Player(name="Bench1", position=Position.ATTACK, stamina=85, shooting=75, condition=85),
+            Player(name="Bench2", position=Position.ATTACK, stamina=85, shooting=75, condition=85),
+            Player(name="Bench3", position=Position.ATTACK, stamina=85, shooting=75, condition=85),
         ]
         team = Team(name="Test FC", players=players)
-        subs = generate_auto_subs(team)
+        subs = generate_auto_subs(team, active_players=[players[0], players[1], players[2], players[3]])
         out_names = [s["out"] for s in subs]
         # Tired players should be substituted out
         assert "Tired1" in out_names or "Tired2" in out_names

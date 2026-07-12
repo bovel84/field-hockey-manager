@@ -130,7 +130,7 @@ class TestTeam:
         t = Team(name="HC Roma", players=players)
         rating = t.team_rating()
         assert 0 <= rating <= 100
-        assert rating > 70
+        assert rating > 60  # rating now includes condition/form/happiness defaults
 
     def test_team_rating_empty(self):
         t = Team(name="Empty FC", players=[])
