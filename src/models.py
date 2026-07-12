@@ -83,6 +83,10 @@ class Player:
     condition: int = 100  # Physical readiness, 0-100
     form: int = 50  # Recent performance, 0-100
     matches_since_rest: int = 0
+    wage: int = 5  # Wage units paid each league round
+    contract_years: int = 3
+    squad_role: str = "Rotazione"  # Chiave, Titolare, Rotazione, Prospetto
+    happiness: int = 60
 
     def overall_rating(self) -> int:
         """Calculate overall rating using position-specific weights."""
@@ -105,7 +109,10 @@ class Player:
         # Form changes performance by at most ±8%; condition can cost up to 25%.
         form_factor = 1.0 + ((self.form - 50) / 50.0) * 0.08
         condition_factor = 0.75 + (max(0, min(100, self.condition)) / 100.0) * 0.25
-        return max(1, int(round(base * morale_factor * form_factor * condition_factor)))
+        happiness_factor = 0.95 + (max(0, min(100, self.happiness)) / 100.0) * 0.10
+        return max(1, int(round(
+            base * morale_factor * form_factor * condition_factor * happiness_factor
+        )))
 
     def apply_match_load(self, intensity: str = "Bilanciata", played: bool = True) -> None:
         """Apply fatigue after a match or recovery when the player is rested."""
@@ -129,6 +136,32 @@ class Player:
         if scored:
             delta += 2
         self.form = max(0, min(100, self.form + delta))
+
+    def update_happiness_for_selection(self, started: bool) -> None:
+        """Update happiness according to playing time and promised squad role."""
+        expected_to_start = self.squad_role in ("Chiave", "Titolare")
+        if started:
+            delta = 2 if expected_to_start else 3
+        else:
+            delta = -5 if self.squad_role == "Chiave" else (
+                -3 if self.squad_role == "Titolare" else 1
+            )
+        self.happiness = max(0, min(100, self.happiness + delta))
+
+    def renew_contract(self, years: int, wage: int) -> bool:
+        """Renew a contract when the proposal is credible for the player's status."""
+        if years < 1 or years > 5 or wage < 1:
+            return False
+        minimum = max(1, self.overall_rating() // 12)
+        if self.squad_role == "Chiave":
+            minimum += 2
+        if wage < minimum:
+            self.happiness = max(0, self.happiness - 5)
+            return False
+        self.contract_years = years
+        self.wage = wage
+        self.happiness = min(100, self.happiness + 5)
+        return True
 
     def can_play(self) -> bool:
         """Return True if the player is available (not injured)."""
@@ -159,7 +192,8 @@ class Player:
         return (
             f"{self.name} [{self.position.value}] OVR:{self.overall_rating()} "
             f"FORMA:{self.form} COND:{self.condition} G:{self.goals} "
-            f"A:{self.appearances} Età:{self.age} Mor:{self.morale}{inj}"
+            f"A:{self.appearances} Età:{self.age} Mor:{self.morale} "
+            f"Fel:{self.happiness} Contr:{self.contract_years}a{inj}"
         )
 
 
