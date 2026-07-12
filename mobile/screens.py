@@ -222,6 +222,7 @@ class MenuScreen(Screen):
             ("📊 Statistiche", "statistiche"), ("💰 Mercato", "mercato"),
             ("🌱 Vivaio", "youth"), ("📑 Contratti", "contratti"),
             ("💰 Finanze", "finanze"),
+            ("🧠 Consigli", "consigli"),
             ("💾 Salva / Carica", "saveload"),
         ]:
             actions.add_widget(self._action(label, target))
@@ -1470,3 +1471,126 @@ class FinanceScreen(Screen):
             team.budget -= team.facilities.upgrade_cost(fac_type)
             team.facilities.upgrade(fac_type)
             self._refresh()
+
+
+# ── Manager Advice Screen ───────────────────────────────────────
+
+from mobile.widgets import (
+    AdviceCard, StatPill, FinanceBar, CompactPlayerRow, SectionHeader,
+    SUCCESS_COLOR, WARNING_COLOR, DANGER_COLOR, INFO_COLOR, SUBTLE_TEXT,
+)
+
+
+class ConsigliScreen(Screen):
+    """Manager advisory screen with AI-driven suggestions."""
+
+    def __init__(self, app, **kwargs):
+        super().__init__(**kwargs)
+        self.app = app
+        layout = BoxLayout(orientation="vertical", padding=12, spacing=6)
+
+        layout.add_widget(Label(
+            text="🧠 Consigli del Manager",
+            font_size="22sp", bold=True, color=ACCENT_COLOR,
+            size_hint_y=None, height=40,
+        ))
+
+        # Quick stats row
+        self.stats_row = BoxLayout(orientation="horizontal", spacing=4,
+                                   size_hint_y=None, height=30)
+        layout.add_widget(self.stats_row)
+
+        scroll = ScrollView(size_hint_y=0.82)
+        self.content = BoxLayout(orientation="vertical", spacing=8, size_hint_y=None)
+        self.content.bind(minimum_height=self.content.setter("height"))
+        scroll.add_widget(self.content)
+        layout.add_widget(scroll)
+
+        layout.add_widget(styled_button("⬅️ Indietro",
+            lambda _: setattr(app.sm, "current", "menu")))
+        self.add_widget(layout)
+
+    def on_enter(self):
+        self._refresh()
+
+    def _refresh(self):
+        self.content.clear_widgets()
+        self.stats_row.clear_widgets()
+        team = self.app.user_team
+        if not team:
+            return
+
+        # Init finances if needed
+        if not team.sponsors and not team.stadium:
+            team.init_finances(getattr(team, "prestige", 0))
+
+        # Quick stats
+        injured_count = sum(1 for p in team.players if p.injured)
+        expiring_count = sum(1 for p in team.players if p.contract_years <= 1)
+        avg_eff = sum(p.effective_rating() for p in team.players) / len(team.players) if team.players else 0
+        avg_cond = sum(p.condition for p in team.players) / len(team.players) if team.players else 0
+
+        self.stats_row.add_widget(StatPill("🏥", "Infortunati", str(injured_count),
+                                           DANGER_COLOR if injured_count else SUBTLE_TEXT))
+        self.stats_row.add_widget(StatPill("📝", "In scadenza", str(expiring_count),
+                                           WARNING_COLOR if expiring_count else SUBTLE_TEXT))
+        self.stats_row.add_widget(StatPill("⭐", "EFF medio", f"{avg_eff:.0f}",
+                                           rating_to_color(int(avg_eff))))
+        self.stats_row.add_widget(StatPill("💪", "Cond media", f"{avg_cond:.0f}",
+                                           rating_to_color(int(avg_cond))))
+
+        # Generate advice
+        from src.models import generate_manager_advice
+        advice_list = generate_manager_advice(team)
+
+        # Sort by priority: danger > warning > info > success
+        priority_order = {"danger": 0, "warning": 1, "info": 2, "success": 3}
+        advice_list.sort(key=lambda a: priority_order.get(a["priority"], 9))
+
+        self.content.add_widget(SectionHeader("📋 Suggerimenti"))
+
+        for adv in advice_list:
+            card = AdviceCard(
+                title=adv["title"],
+                text=adv["text"],
+                priority=adv["priority"],
+                icon=adv["icon"],
+            )
+            self.content.add_widget(card)
+
+        # Squad analysis section
+        self.content.add_widget(SectionHeader("📊 Analisi Rosa"))
+
+        # Position distribution
+        pos_counts = {}
+        for p in team.players:
+            pos_counts[p.position] = pos_counts.get(p.position, 0) + 1
+        for pos in sorted(pos_counts.keys(), key=lambda x: x.value):
+            count = pos_counts[pos]
+            self.content.add_widget(StatPill(
+                POS_EMOJI.get(pos, ""),
+                pos.value,
+                f"{count} giocatori",
+                pos_color(pos),
+            ))
+
+        # Top 3 players by effective rating
+        self.content.add_widget(SectionHeader("🏆 Top 3 per Rating Effettivo"))
+        sorted_players = sorted(team.players, key=lambda p: p.effective_rating(), reverse=True)
+        for i, p in enumerate(sorted_players[:3], 1):
+            self.content.add_widget(CompactPlayerRow(
+                p, extra=f"#{i} EFF {p.effective_rating()}",
+            ))
+
+        # Finance summary
+        self.content.add_widget(SectionHeader("💰 Bilancio Finanziario"))
+        income = team.season_revenue + (team.sponsor_income(team.wins, team.goals_for) if team.sponsors else 0)
+        expenses = team.season_expenses + (team.payroll_per_round() * 10)
+        self.content.add_widget(FinanceBar(income=income, expenses=expenses))
+
+        # Budget and balance
+        balance = team.season_balance() if hasattr(team, "season_balance") else 0
+        bal_color = SUCCESS_COLOR if balance >= 0 else DANGER_COLOR
+        self.content.add_widget(StatPill("💵", "Budget", str(team.budget),
+                                          SUCCESS_COLOR if team.budget > 0 else DANGER_COLOR))
+        self.content.add_widget(StatPill("📊", "Bilancio", f"{'+' if balance >= 0 else ''}{balance}", bal_color))

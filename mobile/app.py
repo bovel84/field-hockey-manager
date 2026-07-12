@@ -31,6 +31,7 @@ from src.simulation import simulate_match
 from mobile.screens import (
     MenuScreen, RosaScreen, CalendarioScreen, ClassificaScreen,
     FinanceScreen,
+    ConsigliScreen,
     PartitaScreen, StatisticheScreen, AllenamentiScreen, MercatoScreen,
     CarrieraScreen, YouthAcademyScreen, SaveLoadScreen, ContractsScreen,
     LineupScreen,
@@ -103,6 +104,7 @@ class FieldHockeyManagerApp(App):
             self.sm.add_widget(ContractsScreen(self, name="contratti"))
             self.sm.add_widget(LineupScreen(self, name="formazione"))
             self.sm.add_widget(FinanceScreen(self, name="finanze"))
+            self.sm.add_widget(ConsigliScreen(self, name="consigli"))
             self.root_container.clear_widgets()
             self.root_container.add_widget(self.sm)
         except Exception:

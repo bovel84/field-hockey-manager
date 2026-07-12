@@ -550,3 +550,148 @@ def generate_stadium(team_name: str, prestige: int = 0) -> Stadium:
         maintenance_cost=40 + prestige * 10,
         level=1,
     )
+
+
+# ── Manager Advisory System ─────────────────────────────────────
+
+def generate_manager_advice(team) -> list[dict]:
+    """Generate tactical and management advice for the user's team.
+
+    Returns a list of dicts with keys:
+        title, text, priority (danger/warning/success/info), icon
+    """
+    advice = []
+
+    # 1. Injury check
+    injured = [p for p in team.players if p.injured]
+    if injured:
+        advice.append({
+            "title": "Infortunati",
+            "text": f"{len(injured)} giocatore/i infortunato/i: {', '.join(p.name for p in injured[:3])}. "
+                    f"Valuta sostituzioni o rinforzi dal mercato.",
+            "priority": "danger" if len(injured) >= 3 else "warning",
+            "icon": "🏥",
+        })
+
+    # 2. Low condition starters
+    tired = [p for p in team.players if not p.injured and p.condition < 40]
+    if tired:
+        advice.append({
+            "title": "Giocatori affaticati",
+            "text": f"{len(tired)} giocatore/i con condition < 40: {', '.join(p.name for p in tired[:3])}. "
+                    f"Considera riposo o sostituzioni.",
+            "priority": "warning",
+            "icon": "💤",
+        })
+
+    # 3. Low happiness
+    unhappy = [p for p in team.players if p.happiness < 40]
+    if unhappy:
+        advice.append({
+            "title": "Spogliatoio insoddisfatto",
+            "text": f"{len(unhappy)} giocatore/i con felicità < 40: {', '.join(p.name for p in unhappy[:3])}. "
+                    f"Più minut o rinnovi contrattuali potrebbero aiutare.",
+            "priority": "warning",
+            "icon": "😔",
+        })
+
+    # 4. Contract expiring
+    expiring = [p for p in team.players if p.contract_years <= 1]
+    if expiring:
+        advice.append({
+            "title": "Contratti in scadenza",
+            "text": f"{len(expiring)} giocatore/i con contratto ≤ 1 anno: "
+                    f"{', '.join(p.name for p in expiring[:3])}. Rinnova prima che siano liberi.",
+            "priority": "warning" if len(expiring) >= 3 else "info",
+            "icon": "📝",
+        })
+
+    # 5. Budget health
+    if team.budget < 0:
+        advice.append({
+            "title": "Bilancio negativo",
+            "text": f"Il club è in rosso ({team.budget}€). Riduci stipendi o vendi giocatori.",
+            "priority": "danger",
+            "icon": "💸",
+        })
+    elif team.budget > 500:
+        advice.append({
+            "title": "Budget sano",
+            "text": f"Hai {team.budget}€ disponibili. Investi in giovani o migliora gli impianti.",
+            "priority": "success",
+            "icon": "💰",
+        })
+
+    # 6. Squad depth by position
+    pos_counts = {}
+    for p in team.players:
+        if not p.injured:
+            pos_counts[p.position] = pos_counts.get(p.position, 0) + 1
+    for pos, count in pos_counts.items():
+        if count < 3:
+            advice.append({
+                "title": f"Scarsa profondità {pos.value}",
+                "text": f"Solo {count} giocatore/i disponibili in {pos.value}. "
+                        f"Cerca rinforzi sul mercato.",
+                "priority": "warning",
+                "icon": "⚠️",
+            })
+
+    # 7. Top performer
+    if not injured and team.players:
+        best = max(team.players, key=lambda p: p.effective_rating())
+        if best.effective_rating() >= 75:
+            advice.append({
+                "title": "Stella della squadra",
+                "text": f"{best.name} è in grande forma (EFF {best.effective_rating()}). "
+                        f"Considera un rinnovo contrattuale con aumento.",
+                "priority": "info",
+                "icon": "⭐",
+            })
+
+    # 8. Young talent
+    young = [p for p in team.players if p.age <= 19 and p.potential >= 80]
+    if young:
+        advice.append({
+            "title": "Giovane talento",
+            "text": f"{len(young)} prospetto/i under-20 con potenziale ≥ 80: "
+                    f"{', '.join(p.name for p in young[:2])}. Fai esperienza giocare.",
+            "priority": "success",
+            "icon": "🌱",
+        })
+
+    # 9. Form check
+    low_form = [p for p in team.players if not p.injured and p.form < 30]
+    if low_form:
+        advice.append({
+            "title": "Forma bassa",
+            "text": f"{len(low_form)} giocatore/i con form < 30. "
+                    f"Non forzarli, lascia che recuperino con allenamenti leggeri.",
+            "priority": "info",
+            "icon": "📉",
+        })
+
+    # 10. Facilities upgrade suggestion
+    if hasattr(team, 'facilities') and team.facilities:
+        lowest = min(team.facilities.academy_level, team.facilities.medical_level, team.facilities.training_level)
+        if lowest <= 1 and team.budget > 250:
+            facility_map = {team.facilities.academy_level: "Academy",
+                            team.facilities.medical_level: "Centro Medico",
+                            team.facilities.training_level: "Allenamento"}
+            advice.append({
+                "title": "Impianti da migliorare",
+                "text": f"Il livello più basso dei tuoi impianti è 1 ({facility_map.get(1, '')}). "
+                        f"Un upgrade costa 250€ e migliora lo sviluppo della squadra.",
+                "priority": "info",
+                "icon": "🏛️",
+            })
+
+    if not advice:
+        advice.append({
+            "title": "Tutto sotto controllo",
+            "text": "Nessun problema rilevante. Continua così!",
+            "priority": "success",
+            "icon": "✅",
+        })
+
+    return advice

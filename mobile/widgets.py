@@ -615,3 +615,206 @@ class MatchFieldWidget(Widget):
             Ellipse(pos=(px - radius, py - radius), size=(radius * 2, radius * 2))
             Color(0.8, 0.8, 0.8, 1)
             Line(circle=(px, py, radius), width=0.5)
+
+
+# ── Sprint 5: Enhanced Graphics & UX Widgets ────────────────────
+
+# Extended palette
+SUCCESS_COLOR = (0.20, 0.78, 0.35, 1)
+WARNING_COLOR = (0.95, 0.69, 0.20, 1)
+DANGER_COLOR = (0.86, 0.20, 0.20, 1)
+INFO_COLOR = (0.23, 0.51, 0.96, 1)
+SUBTLE_TEXT = (0.60, 0.65, 0.78, 1)
+CARD_HIGHLIGHT = (0.12, 0.18, 0.35, 1)
+
+
+class StatPill(BoxLayout):
+    """Compact stat pill with icon, label, value, and color."""
+
+    def __init__(self, icon: str = "", label: str = "", value: str = "",
+                 color: tuple = TEXT_COLOR, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = "horizontal"
+        self.size_hint_y = None
+        self.height = 28
+        self.spacing = 4
+
+        with self.canvas.before:
+            Color(*CARD_HIGHLIGHT)
+            RoundedRectangle(pos=self.pos, size=self.size, radius=[14])
+        self.bind(pos=self._update, size=self._update)
+
+        self.add_widget(Label(
+            text=icon, font_size="14sp", color=color,
+            size_hint_x=0.20,
+        ))
+        self.add_widget(Label(
+            text=label, font_size="12sp", color=SUBTLE_TEXT,
+            size_hint_x=0.35, halign="left",
+        ))
+        self.add_widget(Label(
+            text=value, font_size="13sp", bold=True, color=color,
+            size_hint_x=0.45, halign="left",
+        ))
+
+    def _update(self, *_):
+        self.canvas.before.clear()
+        with self.canvas.before:
+            Color(*CARD_HIGHLIGHT)
+            RoundedRectangle(pos=self.pos, size=self.size, radius=[14])
+
+
+class AdviceCard(BoxLayout):
+    """A manager advice card with icon, title, text, priority color."""
+
+    def __init__(self, title: str, text: str, priority: str = "info",
+                 icon: str = "💡", **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = "vertical"
+        self.size_hint_y = None
+        self.height = 70
+        self.spacing = 2
+        self.padding = [10, 6]
+
+        color_map = {
+            "danger": DANGER_COLOR,
+            "warning": WARNING_COLOR,
+            "success": SUCCESS_COLOR,
+            "info": INFO_COLOR,
+        }
+        border_color = color_map.get(priority, INFO_COLOR)
+
+        with self.canvas.before:
+            Color(*CARD_COLOR)
+            RoundedRectangle(pos=self.pos, size=self.size, radius=[8])
+        self.bind(pos=self._update, size=self._update)
+
+        header = BoxLayout(orientation="horizontal", size_hint_y=0.40)
+        header.add_widget(Label(
+            text=f"{icon} {title}",
+            font_size="14sp", bold=True, color=border_color,
+            size_hint_x=0.70, halign="left",
+        ))
+        priority_label = {"danger": "🔴 Urgente", "warning": "🟡 Attenzione",
+                          "success": "🟢 OK", "info": "ℹ️ Info"}
+        header.add_widget(Label(
+            text=priority_label.get(priority, "ℹ️ Info"),
+            font_size="11sp", color=SUBTLE_TEXT,
+            size_hint_x=0.30, halign="right",
+        ))
+        self.add_widget(header)
+
+        body = Label(
+            text=text, font_size="12sp", color=TEXT_COLOR,
+            size_hint_y=0.60, halign="left", valign="top",
+        )
+        body.bind(size=lambda inst, _: setattr(inst, "text_size", inst.size))
+        self.add_widget(body)
+
+    def _update(self, *_):
+        self.canvas.before.clear()
+        with self.canvas.before:
+            Color(*CARD_COLOR)
+            RoundedRectangle(pos=self.pos, size=self.size, radius=[8])
+
+
+class FinanceBar(BoxLayout):
+    """Visual finance bar showing income vs expenses."""
+
+    def __init__(self, income: int = 0, expenses: int = 0, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = "vertical"
+        self.size_hint_y = None
+        self.height = 60
+        self.spacing = 2
+
+        total = max(income + expenses, 1)
+        income_pct = income / total
+        expense_pct = expenses / total
+
+        bar_row = BoxLayout(orientation="horizontal", size_hint_y=0.40, spacing=2)
+        if income > 0:
+            inc_btn = Button(
+                text=f"+{income}", font_size="11sp", color=TEXT_COLOR,
+                background_color=SUCCESS_COLOR, disabled=True,
+            )
+            inc_btn.size_hint_x = income_pct
+            bar_row.add_widget(inc_btn)
+        if expenses > 0:
+            exp_btn = Button(
+                text=f"-{expenses}", font_size="11sp", color=TEXT_COLOR,
+                background_color=DANGER_COLOR, disabled=True,
+            )
+            exp_btn.size_hint_x = expense_pct
+            bar_row.add_widget(exp_btn)
+        self.add_widget(bar_row)
+
+        net = income - expenses
+        net_color = SUCCESS_COLOR if net >= 0 else DANGER_COLOR
+        self.add_widget(Label(
+            text=f"Netto: {'+' if net >= 0 else ''}{net}",
+            font_size="13sp", bold=True, color=net_color,
+            size_hint_y=0.60,
+        ))
+
+
+class CompactPlayerRow(BoxLayout):
+    """Compact single-line player row for lists."""
+
+    def __init__(self, player: Player, extra: str = "", **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = "horizontal"
+        self.size_hint_y = None
+        self.height = 32
+        self.spacing = 4
+
+        with self.canvas.before:
+            Color(*CARD_COLOR)
+            RoundedRectangle(pos=self.pos, size=self.size, radius=[4])
+        self.bind(pos=self._update, size=self._update)
+
+        inj = "🔴 " if player.injured else ""
+        self.add_widget(Label(
+            text=f"{inj}{player.name}",
+            font_size="13sp", color=TEXT_COLOR,
+            size_hint_x=0.30, halign="left",
+        ))
+        self.add_widget(Label(
+            text=f"{POS_EMOJI.get(player.position, '')} {player.position.value}",
+            font_size="12sp", color=pos_color(player.position),
+            size_hint_x=0.18,
+        ))
+        eff = player.effective_rating()
+        self.add_widget(Label(
+            text=f"EFF {eff}",
+            font_size="12sp", bold=True, color=rating_to_color(eff),
+            size_hint_x=0.15,
+        ))
+        cond_color = rating_to_color(player.condition)
+        self.add_widget(Label(
+            text=f"C{player.condition}",
+            font_size="11sp", color=cond_color,
+            size_hint_x=0.12,
+        ))
+        self.add_widget(Label(
+            text=extra,
+            font_size="12sp", color=SUBTLE_TEXT,
+            size_hint_x=0.25, halign="right",
+        ))
+
+    def _update(self, *_):
+        self.canvas.before.clear()
+        with self.canvas.before:
+            Color(*CARD_COLOR)
+            RoundedRectangle(pos=self.pos, size=self.size, radius=[4])
+
+
+class SectionHeader(Label):
+    """Styled section header with accent bar."""
+
+    def __init__(self, text: str, **kwargs):
+        super().__init__(
+            text=text, font_size="18sp", bold=True,
+            color=ACCENT_COLOR, size_hint_y=None, height=38,
+            **kwargs,
+        )
