@@ -206,32 +206,80 @@ class FieldHockeyManagerApp(App):
             return f"Prossima: {home.name} vs {away.name}"
         return "Stagione completata! 🎉"
 
-    def play_next_match(self, formation: str, intensity: str, user_subs: list[dict] | None = None) -> Match | None:
+    def get_scouting_report(self) -> str:
+        """Return a compact pre-match report for the next opponent."""
+        entry = self.get_next_match()
+        if not entry or not self.user_team:
+            return "Nessun rapporto disponibile."
+        opponent_idx = (
+            entry["away"] if entry["home"] == self.user_team_idx else entry["home"]
+        )
+        opponent = self.teams[opponent_idx]
+        available = [player for player in opponent.players if player.can_play()]
+        key_player = max(
+            available, key=lambda player: player.effective_rating(), default=None,
+        )
+        avg_condition = (
+            round(sum(player.condition for player in available) / len(available))
+            if available else 0
+        )
+        injuries = sum(1 for player in opponent.players if player.injured)
+        advice = "Mantieni un piano equilibrato."
+        if opponent.pressing == "Alto":
+            advice = "Supera il primo pressing con passaggi rapidi."
+        elif opponent.formation == "5-3-2":
+            advice = "Allarga il gioco contro il blocco difensivo."
+        elif avg_condition < 72:
+            advice = "Aumenta il ritmo: l'avversario è affaticato."
+        return (
+            f"SCOUTING: {opponent.name} | Rating {opponent.team_rating()} | "
+            f"{opponent.formation}, pressing {opponent.pressing}, ritmo {opponent.tempo}\n"
+            f"Condizione {avg_condition}% | Indisponibili {injuries} | "
+            f"Uomo chiave: {key_player.name if key_player else '—'}\n"
+            f"Consiglio: {advice}"
+        )
+
+    def play_next_match(
+        self,
+        formation: str,
+        intensity: str,
+        pressing: str = "Medio",
+        tempo: str = "Bilanciato",
+        user_subs: list[dict] | None = None,
+    ) -> Match | None:
         entry = self.get_next_match()
         if not entry:
             return None
         home = self.teams[entry["home"]]
         away = self.teams[entry["away"]]
+        user_is_home = entry["home"] == self.user_team_idx
 
-        # Apply user formation/intensity
         if self.user_team:
             self.user_team.formation = formation
             self.user_team.intensity = intensity
+            self.user_team.pressing = pressing
+            self.user_team.tempo = tempo
 
-        # Determine formations/intensities and pass user subs
-        if entry["home"] == self.user_team_idx:
-            match = simulate_match(home, away, seed=None,
-                                    home_formation=formation, home_intensity=intensity,
-                                    home_subs=user_subs)
-        else:
-            match = simulate_match(home, away, seed=None,
-                                    away_formation=formation, away_intensity=intensity,
-                                    away_subs=user_subs)
+        match = simulate_match(
+            home,
+            away,
+            seed=None,
+            home_formation=formation if user_is_home else home.formation,
+            home_intensity=intensity if user_is_home else home.intensity,
+            home_pressing=pressing if user_is_home else home.pressing,
+            home_tempo=tempo if user_is_home else home.tempo,
+            away_formation=away.formation if user_is_home else formation,
+            away_intensity=away.intensity if user_is_home else intensity,
+            away_pressing=away.pressing if user_is_home else pressing,
+            away_tempo=away.tempo if user_is_home else tempo,
+            home_subs=user_subs if user_is_home else None,
+            away_subs=None if user_is_home else user_subs,
+        )
 
         self._apply_result(match, entry)
         self._update_career_after_match(match, entry)
         self.current_round = entry["round"] + 1
-        self.trainings_used = 0  # reset trainings for new round
+        self.trainings_used = 0
         self.save_game()
         return match
 
