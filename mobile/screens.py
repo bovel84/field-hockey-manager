@@ -212,14 +212,15 @@ class MenuScreen(Screen):
         self.content.add_widget(section_title("Centro manageriale"))
         actions = GridLayout(
             cols=2 if compact else 4, spacing=8,
-            size_hint_y=None, height=248 if compact else 118,
+            size_hint_y=None, height=340 if compact else 174,
         )
         for label, target in [
             ("💼 Carriera", "carriera"), ("🥅 Rosa", "rosa"),
             ("📋 Tattiche e partita", "partita"), ("🏋 Allenamenti", "allenamenti"),
             ("📅 Calendario", "calendario"), ("🏆 Classifica", "classifica"),
             ("📊 Statistiche", "statistiche"), ("💰 Mercato", "mercato"),
-            ("🌱 Vivaio", "youth"), ("💾 Salva / Carica", "saveload"),
+            ("🌱 Vivaio", "youth"), ("📑 Contratti", "contratti"),
+            ("💾 Salva / Carica", "saveload"),
         ]:
             actions.add_widget(self._action(label, target))
         self.content.add_widget(actions)
@@ -230,6 +231,133 @@ class MenuScreen(Screen):
             bg_color=(0.42, 0.16, 0.18, 1), height=44,
         ))
         self.content.add_widget(exit_row)
+
+
+# ── Contracts ───────────────────────────────────────────────────
+
+class ContractsScreen(Screen):
+    """Manage renewals, wages and promised squad roles."""
+
+    def __init__(self, app, **kwargs):
+        super().__init__(**kwargs)
+        self.app = app
+        make_screen_bg(self)
+        layout = BoxLayout(orientation="vertical", padding=18, spacing=10)
+        layout.add_widget(section_title("📑 Contratti e spogliatoio"))
+
+        self.summary = Label(
+            text="", font_size="14sp", color=TEXT_COLOR,
+            size_hint_y=None, height=62, halign="left", valign="middle",
+        )
+        self.summary.bind(
+            size=lambda inst, _value=None: setattr(inst, "text_size", inst.size)
+        )
+        layout.add_widget(self.summary)
+
+        self.player_spinner = Spinner(
+            text="Seleziona giocatore", values=[],
+            size_hint_y=None, height=48, font_size="15sp",
+        )
+        self.player_spinner.bind(text=self._refresh_player_info)
+        layout.add_widget(self.player_spinner)
+
+        self.player_info = Label(
+            text="", font_size="14sp", color=(0.72, 0.80, 0.90, 1),
+            size_hint_y=None, height=76,
+        )
+        layout.add_widget(self.player_info)
+
+        offers = BoxLayout(
+            orientation="horizontal", size_hint_y=None, height=48, spacing=8,
+        )
+        self.years_spinner = Spinner(
+            text="3 anni", values=[f"{year} anni" for year in range(1, 6)],
+        )
+        self.wage_spinner = Spinner(
+            text="5", values=[str(value) for value in range(1, 16)],
+        )
+        offers.add_widget(self.years_spinner)
+        offers.add_widget(self.wage_spinner)
+        layout.add_widget(offers)
+
+        layout.add_widget(Label(
+            text="Durata proposta                         Stipendio per turno",
+            font_size="12sp", color=(0.62, 0.68, 0.76, 1),
+            size_hint_y=None, height=26,
+        ))
+        layout.add_widget(styled_button(
+            "Proponi rinnovo", self._renew,
+            bg_color=(0.08, 0.55, 0.34, 1),
+        ))
+        self.result = Label(
+            text="", font_size="14sp", color=TEXT_COLOR,
+            size_hint_y=None, height=70,
+        )
+        layout.add_widget(self.result)
+        layout.add_widget(styled_button(
+            "⬅️ Indietro", lambda _btn: setattr(app.sm, "current", "menu"),
+        ))
+        self.add_widget(layout)
+
+    def on_enter(self):
+        team = self.app.user_team
+        players = team.players if team else []
+        self.player_spinner.values = [player.name for player in players]
+        payroll = team.payroll_per_round() if team else 0
+        expiring = sum(1 for player in players if player.contract_years <= 1)
+        self.summary.text = (
+            f"Budget: {getattr(team, 'budget', 0)}  •  Monte stipendi: {payroll} per turno\n"
+            f"Contratti in scadenza: {expiring}"
+        )
+        if players and self.player_spinner.text not in self.player_spinner.values:
+            self.player_spinner.text = players[0].name
+        self._refresh_player_info()
+        self.result.text = ""
+
+    def _selected_player(self):
+        team = self.app.user_team
+        if not team:
+            return None
+        return next(
+            (player for player in team.players if player.name == self.player_spinner.text),
+            None,
+        )
+
+    def _refresh_player_info(self, *_args):
+        player = self._selected_player()
+        if not player:
+            self.player_info.text = ""
+            return
+        self.player_info.text = (
+            f"{player.squad_role}  •  Felicità {player.happiness}\n"
+            f"Contratto {player.contract_years} anni  •  Stipendio {player.wage}"
+        )
+        self.wage_spinner.text = str(min(15, max(1, player.wage + 1)))
+
+    def _renew(self, _btn):
+        player = self._selected_player()
+        team = self.app.user_team
+        if not player or not team:
+            return
+        years = int(self.years_spinner.text.split()[0])
+        wage = int(self.wage_spinner.text)
+        signing_bonus = wage * years
+        if team.budget < signing_bonus:
+            self.result.text = "❌ Budget insufficiente per il bonus alla firma."
+            self.result.color = (0.86, 0.2, 0.2, 1)
+            return
+        if not player.renew_contract(years, wage):
+            self.result.text = "❌ Offerta rifiutata: stipendio non adeguato al ruolo."
+            self.result.color = (0.86, 0.2, 0.2, 1)
+            self._refresh_player_info()
+            return
+        team.budget -= signing_bonus
+        self.app.save_game()
+        self.result.text = (
+            f"✅ Rinnovo firmato per {years} anni. Bonus alla firma: {signing_bonus}."
+        )
+        self.result.color = (0.2, 0.78, 0.35, 1)
+        self.on_enter()
 
 
 # ── Save / Load ───────────────────────────────────────────────
