@@ -30,7 +30,7 @@ from src.simulation import simulate_match
 from mobile.screens import (
     MenuScreen, RosaScreen, CalendarioScreen, ClassificaScreen,
     PartitaScreen, StatisticheScreen, AllenamentiScreen, MercatoScreen,
-    CarrieraScreen, YouthAcademyScreen, SaveLoadScreen,
+    CarrieraScreen, YouthAcademyScreen, SaveLoadScreen, ContractsScreen,
 )
 
 Window.clearcolor = (0.102, 0.102, 0.180, 1)  # #1a1a2e
@@ -97,6 +97,7 @@ class FieldHockeyManagerApp(App):
             self.sm.add_widget(YouthAcademyScreen(self, name="youth"))
             self.sm.add_widget(CarrieraScreen(self, name="carriera"))
             self.sm.add_widget(SaveLoadScreen(self, name="saveload"))
+            self.sm.add_widget(ContractsScreen(self, name="contratti"))
             self.root_container.clear_widgets()
             self.root_container.add_widget(self.sm)
         except Exception:
