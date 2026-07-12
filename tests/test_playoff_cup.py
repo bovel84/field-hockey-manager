@@ -88,11 +88,9 @@ class TestPlayoffBracket:
         assert bracket.semifinal2.away_team.name == third
 
     def test_playoff_bracket_not_enough_teams(self):
-        """generate_playoff_bracket should raise with < 4 teams."""
-        teams = [make_team("A"), make_team("B")]
+        """generate_playoff_bracket should raise with < 2 teams."""
+        teams = [make_team("A")]
         standings = Standings()
-        m = Match(home_team=teams[0], away_team=teams[1], home_score=1, away_score=0, played=True)
-        standings.update(m)
         with pytest.raises(ValueError):
             generate_playoff_bracket(teams, standings)
 

@@ -157,6 +157,8 @@ class Match:
     played: bool = False
 
     def __str__(self) -> str:
+        home_name = self.home_team.name if self.home_team else "TBD"
+        away_name = self.away_team.name if self.away_team else "TBD"
         if self.played:
-            return f"{self.home_team.name} {self.home_score} - {self.away_score} {self.away_team.name}"
-        return f"{self.home_team.name} vs {self.away_team.name} (not played)"
+            return f"{home_name} {self.home_score} - {self.away_score} {away_name}"
+        return f"{home_name} vs {away_name} (not played)"
